@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const transcriptionRoutes = require('./routes/transcription');
+const ttsRoutes = require('./routes/tts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rutas
 app.use('/api/transcription', transcriptionRoutes);
+app.use('/api/tts', ttsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

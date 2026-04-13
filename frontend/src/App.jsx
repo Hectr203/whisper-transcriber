@@ -2,11 +2,13 @@ import React, { useState, useRef, useCallback } from 'react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
-import TranscriptionResult from './components/TranscriptionResult';
+import TextEditorTTS from './components/TextEditorTTS';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('stt'); // 'stt' | 'tts'
+  
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState(null);  // { stage, message, progress, ... }
   const [result, setResult] = useState(null);
@@ -14,7 +16,6 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const eventSourceRef = useRef(null);
-  const xhrRef = useRef(null);
 
   const reset = useCallback(() => {
     setFile(null);
@@ -122,7 +123,7 @@ export default function App() {
       padding: '32px 16px 64px',
     }}>
       {/* Header */}
-      <header style={{ textAlign: 'center', marginBottom: '40px' }}>
+      <header style={{ textAlign: 'center', marginBottom: '30px' }}>
         <div style={{ fontSize: '52px', marginBottom: '12px' }}>🎙️</div>
         <h1 style={{
           fontSize: 'clamp(24px, 4vw, 36px)',
@@ -134,164 +135,222 @@ export default function App() {
         }}>
           Whisper Transcriber
         </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '16px', maxWidth: '480px' }}>
-          Transcripción automática de audio con IA — soporta archivos de hasta 1 GB
+        <p style={{ color: 'var(--text-muted)', fontSize: '16px', maxWidth: '480px', margin: '0 auto' }}>
+          Transcripción automática de audio con IA y generación de voz a partir de texto
         </p>
       </header>
 
+      {/* Tabs */}
+      <div style={{
+        display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '30px', background: 'var(--surface2)', padding: '6px', borderRadius: '12px'
+      }}>
+        <button
+          onClick={() => setActiveTab('stt')}
+          style={{
+            padding: '10px 24px', borderRadius: '8px', border: 'none',
+            background: activeTab === 'stt' ? 'var(--surface)' : 'transparent',
+            color: activeTab === 'stt' ? 'var(--accent)' : 'var(--text-muted)',
+            fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+            boxShadow: activeTab === 'stt' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none'
+          }}
+        >
+          🎙️ Voz a Texto
+        </button>
+        <button
+          onClick={() => setActiveTab('tts')}
+          style={{
+            padding: '10px 24px', borderRadius: '8px', border: 'none',
+            background: activeTab === 'tts' ? 'var(--surface)' : 'transparent',
+            color: activeTab === 'tts' ? 'var(--accent)' : 'var(--text-muted)',
+            fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+            boxShadow: activeTab === 'tts' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none'
+          }}
+        >
+          🗣️ Texto a Voz
+        </button>
+      </div>
+
       {/* Contenido principal */}
       <main style={{ width: '100%', maxWidth: '760px' }}>
-
-        {/* Upload Zone */}
-        {!result && (
+        {activeTab === 'stt' ? (
           <>
-            <UploadZone
-              onFileSelected={handleFileSelected}
-              disabled={isProcessing}
-            />
-            <AudioRecorder
-              onRecordComplete={handleFileSelected}
-              disabled={isProcessing}
-            />
-          </>
-        )}
+            {/* Upload Zone */}
+            {!result && (
+              <>
+                <UploadZone
+                  onFileSelected={handleFileSelected}
+                  disabled={isProcessing}
+                />
+                <AudioRecorder
+                  onRecordComplete={handleFileSelected}
+                  disabled={isProcessing}
+                />
+              </>
+            )}
 
-        {/* Info del archivo seleccionado */}
-        {file && !result && !isProcessing && (
-          <div style={{
-            marginTop: '16px',
-            padding: '14px 18px',
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexWrap: 'wrap',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '20px' }}>🎵</span>
-              <div>
-                <p style={{ fontWeight: 500, fontSize: '14px' }}>{file.name}</p>
-                <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                  {fileSizeMB} MB
-                  {isLargeFile && (
-                    <span style={{ marginLeft: '8px', color: 'var(--warning)' }}>
-                      — Se dividirá automáticamente en segmentos
-                    </span>
-                  )}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => { setFile(null); setError(null); }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '18px',
-                padding: '4px',
-                borderRadius: '4px',
-              }}
-              title="Quitar archivo"
-            >✕</button>
-          </div>
-        )}
-
-        {/* Botón transcribir */}
-        {file && !result && !isProcessing && (
-          <button
-            onClick={handleTranscribe}
-            style={{
-              marginTop: '16px',
-              width: '100%',
-              padding: '14px',
-              background: 'var(--accent)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '16px',
-              fontWeight: 600,
-              letterSpacing: '0.02em',
-              transition: 'background 0.2s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
-          >
-            Transcribir con Whisper AI →
-          </button>
-        )}
-
-        {/* Progreso */}
-        {isProcessing && status && (
-          <>
-            <ProgressBar status={status} />
-            <button
-              onClick={handleCancel}
-              style={{
-                marginTop: '12px',
-                width: '100%',
-                padding: '10px',
-                background: 'transparent',
-                color: 'var(--text-muted)',
+            {/* Info del archivo seleccionado */}
+            {file && !result && !isProcessing && (
+              <div style={{
+                marginTop: '16px',
+                padding: '14px 18px',
+                background: 'var(--surface)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-sm)',
-                fontSize: '14px',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.borderColor = 'var(--error)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
-            >
-              Cancelar
-            </button>
-          </>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div style={{
-            marginTop: '16px',
-            padding: '16px 20px',
-            background: 'rgba(248, 113, 113, 0.08)',
-            border: '1px solid rgba(248, 113, 113, 0.3)',
-            borderRadius: 'var(--radius-sm)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-              <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
-              <div>
-                <p style={{ color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
-                  Error en la transcripción
-                </p>
-                <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>{error}</p>
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                flexWrap: 'wrap',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>🎵</span>
+                  <div>
+                    <p style={{ fontWeight: 500, fontSize: '14px' }}>{file.name}</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                      {fileSizeMB} MB
+                      {isLargeFile && (
+                        <span style={{ marginLeft: '8px', color: 'var(--warning)' }}>
+                          — Se dividirá automáticamente en segmentos
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setFile(null); setError(null); }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: '18px',
+                    padding: '4px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="Quitar archivo"
+                >✕</button>
               </div>
-            </div>
-            <button
-              onClick={() => setError(null)}
-              style={{
-                marginTop: '12px',
-                padding: '8px 16px',
-                background: 'var(--surface2)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text)',
-                fontSize: '13px',
-              }}
-            >
-              Intentar de nuevo
-            </button>
-          </div>
-        )}
+            )}
 
-        {/* Resultado */}
-        {result && (
-          <TranscriptionResult result={result} onReset={reset} />
+            {/* Botón transcribir */}
+            {file && !result && !isProcessing && (
+              <button
+                onClick={handleTranscribe}
+                style={{
+                  marginTop: '16px',
+                  width: '100%',
+                  padding: '14px',
+                  background: 'var(--accent)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  letterSpacing: '0.02em',
+                  transition: 'background 0.2s',
+                  cursor: 'pointer'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
+              >
+                Transcribir con Whisper AI →
+              </button>
+            )}
+
+            {/* Progreso */}
+            {isProcessing && status && (
+              <>
+                <ProgressBar status={status} />
+                <button
+                  onClick={handleCancel}
+                  style={{
+                    marginTop: '12px',
+                    width: '100%',
+                    padding: '10px',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '14px',
+                    transition: 'all 0.2s',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.borderColor = 'var(--error)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+                >
+                  Cancelar
+                </button>
+              </>
+            )}
+
+            {/* Error */}
+            {error && (
+              <div style={{
+                marginTop: '16px',
+                padding: '16px 20px',
+                background: 'rgba(248, 113, 113, 0.08)',
+                border: '1px solid rgba(248, 113, 113, 0.3)',
+                borderRadius: 'var(--radius-sm)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
+                  <div>
+                    <p style={{ color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
+                      Error en la transcripción
+                    </p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>{error}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  style={{
+                    marginTop: '12px',
+                    padding: '8px 16px',
+                    background: 'var(--surface2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text)',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Intentar de nuevo
+                </button>
+              </div>
+            )}
+
+            {/* Resultado */}
+            {result && (
+              <TextEditorTTS 
+                initialText={result.transcription} 
+                initialMetadata={result}
+                onReset={reset}
+                showReset={true}
+              />
+            )}
+          </>
+        ) : (
+          <div style={{ animation: 'fadeIn 0.3s' }}>
+            <p style={{ 
+              color: 'var(--text-muted)', 
+              marginBottom: '20px', 
+              textAlign: 'center', 
+              fontSize: '15px' 
+            }}>
+              Escribe o pega tu texto aquí para convertirlo a audio al instante. 
+              Puedes escuchar e interactuar con el texto libremente, y descargar el archivo MP3 cuando estés listo.
+            </p>
+            <TextEditorTTS 
+              initialText="" 
+              showReset={false}
+            />
+          </div>
         )}
       </main>
 
       {/* Footer */}
       <footer style={{ marginTop: '48px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
-        <p>Powered by <strong style={{ color: 'var(--text)' }}>OpenAI Whisper</strong> — Los archivos se eliminan tras la transcripción</p>
+        <p>Powered by <strong style={{ color: 'var(--text)' }}>OpenAI Whisper</strong> & <strong style={{ color: 'var(--text)' }}>Web Speech API</strong></p>
       </footer>
     </div>
   );
