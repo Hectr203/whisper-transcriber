@@ -66,7 +66,7 @@ app.listen(PORT, () => {
   console.log(`\n🎙️  Whisper Transcriber Backend`);
   console.log(`✅  Servidor corriendo en http://localhost:${PORT}`);
   console.log(`📁  Directorio temporal: ${tempDir}`);
-  console.log(`🔑  API Key configurada: ${process.env.OPENAI_API_KEY ? 'Sí' : 'NO - configura .env'}\n`);
+  console.log(`🔑  API Key configurada: ${process.env.GROQ_API_KEY ? 'Sí' : 'NO - configura .env'}\n`);
 });
 
 // Limpiar archivos temporales al cerrar

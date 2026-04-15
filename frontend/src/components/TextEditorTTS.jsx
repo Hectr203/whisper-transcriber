@@ -34,7 +34,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   // Guardamos un ref para leer la velocidad actualizada dentro de eventos asincronos si fuera necesario
   const speedRef = useRef(1);
   const [activeCharIndex, setActiveCharIndex] = useState(-1);
-  const isCancelIntent = useRef(false);
+  const utteranceRef = useRef(null);
 
   const activeWordRef = useRef(null);
 
@@ -42,7 +42,6 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   useEffect(() => {
     setText(initialText);
     return () => {
-      isCancelIntent.current = true;
       if (window.speechSynthesis) window.speechSynthesis.cancel();
     };
   }, [initialText]);
@@ -88,12 +87,17 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   };
 
   const playFrom = (offsetIndex) => {
-    if (!window.speechSynthesis) return alert("Tu navegador no soporta TTS nativo.");
-    if (!text.trim()) return;
+    if (!window.speechSynthesis) {
+      return alert("Tu navegador no soporta TTS nativo.");
+    }
+    if (!text || !text.trim()) {
+      return; // No hay texto para reproducir
+    }
 
+    // Siempre cancelar y forzar 'resume' para destrabar colas buggeadas
     window.speechSynthesis.cancel();
-    setActiveCharIndex(offsetIndex);
-    
+    window.speechSynthesis.resume();
+
     const sliceBuffer = text.substring(offsetIndex);
     if (!sliceBuffer.trim()) {
       setPlayState('idle');
@@ -101,56 +105,78 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       return;
     }
 
+    utteranceRef.current = null;
+    setActiveCharIndex(offsetIndex);
+    setPlayState('playing'); // Cambiar estado inmediatamente para feedback visual
+
     const utterance = new SpeechSynthesisUtterance(sliceBuffer);
     utterance.rate = speedRef.current;
     utterance.lang = 'es-ES';
-    
+
     const voices = window.speechSynthesis.getVoices();
-    const esVoice = voices.find(v => v.lang.startsWith('es'));
-    if (esVoice) utterance.voice = esVoice;
+    if (voices && voices.length > 0) {
+      const esVoice = voices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
+      if (esVoice) utterance.voice = esVoice;
+    }
 
     // Al cortar el string, el index devuelto arranca en 0 nuevamente. Usamos el offsetIndex para proyectarlo visualmente.
     utterance.onboundary = (e) => {
-      if (e.name === 'word') {
-         setActiveCharIndex(offsetIndex + e.charIndex);
+      if (e && typeof e.charIndex === 'number') {
+        setActiveCharIndex(offsetIndex + e.charIndex);
       }
     };
 
-    utterance.onend = () => {
-      if (isCancelIntent.current) {
-         isCancelIntent.current = false;
-      } else {
-         setPlayState('idle');
-         setActiveCharIndex(-1);
-      }
+    utterance.onstart = () => {
+      setPlayState('playing');
     };
-    
+
+    utterance.onend = (e) => {
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setPlayState('idle');
+      setActiveCharIndex(-1);
+    };
+
     utterance.onerror = (e) => {
-      if (e.error !== 'canceled') {
-         setPlayState('idle');
-         setActiveCharIndex(-1);
-      }
+      console.error("Error en SpeechSynthesis:", e);
+      if (utteranceRef.current !== utterance) return;
+      utteranceRef.current = null;
+      setPlayState('idle');
+      setActiveCharIndex(-1);
     };
 
+    utteranceRef.current = utterance;
+    
+    // Llamar a speak SIN setTimeout, ya que el setTimeout pierde el contexto de "Gesto del Usuario",
+    // y muchos navegadores bloquean la reproducción de audio sintético si no sucede síncronamente al clic.
     window.speechSynthesis.speak(utterance);
-    setPlayState('playing');
   };
 
   const handleTogglePlay = () => {
+    if (!window.speechSynthesis) return;
+
     if (playState === 'playing') {
-       isCancelIntent.current = true;
-       window.speechSynthesis.cancel();
-       setPlayState('paused'); // Se queda en paused con el charIndex original
-    } else if (playState === 'paused' && activeCharIndex >= 0) {
-       playFrom(activeCharIndex);
-    } else {
-       playFrom(0);
+      window.speechSynthesis.pause();
+      setPlayState('paused');
+      return;
     }
+
+    if (playState === 'paused') {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        setPlayState('playing');
+        return;
+      }
+    }
+
+    playFrom(activeCharIndex >= 0 ? activeCharIndex : 0);
   };
 
   const handleStop = () => {
-    isCancelIntent.current = true;
-    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.speaking || window.speechSynthesis.paused) {
+      window.speechSynthesis.cancel();
+    }
+    utteranceRef.current = null;
     setPlayState('idle');
     setActiveCharIndex(-1);
   };
@@ -279,7 +305,8 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           padding: '12px 16px', borderRadius: 'var(--radius-sm)', flexWrap: 'wrap'
         }}>
           {/* Resume/Pause/Play */}
-          <button 
+          <button
+            type="button"
             onClick={handleTogglePlay}
             style={{
               ...btnBase,
@@ -292,6 +319,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
           {playState !== 'idle' && (
              <button 
+                type="button"
                 onClick={handleStop}
                 style={{ ...btnBase, background: 'var(--error)', color: '#fff', borderColor: 'transparent', fontWeight: 600 }}
              >
@@ -303,6 +331,8 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text)', marginLeft: '10px' }}>
             <span style={{ fontSize: '14px', fontWeight: 500 }}>Vel:</span>
             <input 
+              id="tts-speed"
+              name="ttsSpeed"
               type="range" min="0.5" max="3.0" step="0.1" value={speed} 
               onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
               style={{ accentColor: 'var(--accent)', minWidth: '80px' }}
@@ -313,6 +343,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           <div style={{ flex: 1 }} />
 
           <button 
+            type="button"
             onClick={handleDownloadAudio}
             disabled={isDownloading || !text.trim()}
             style={{
@@ -328,6 +359,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)' }}>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
+            type="button"
             onClick={handleCopy}
             style={{
               ...btnBase, background: copied ? 'rgba(74, 222, 128, 0.1)' : 'var(--accent-light)',
@@ -338,6 +370,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           </button>
           
           <button
+            type="button"
             onClick={handleDownloadTxt}
             style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
           >
@@ -346,7 +379,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         </div>
 
         {showReset && onReset && (
-          <button onClick={onReset} style={{...btnBase, background: 'transparent', color: 'var(--text-muted)', borderColor: 'transparent'}}>
+          <button type="button" onClick={onReset} style={{...btnBase, background: 'transparent', color: 'var(--text-muted)', borderColor: 'transparent'}}>
             🔄 Nueva transcripción
           </button>
         )}

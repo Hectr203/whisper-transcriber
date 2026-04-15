@@ -66,6 +66,8 @@ export default function UploadZone({ onFileSelected, disabled }) {
         }}
       >
         <input
+          id="upload-file-input"
+          name="uploadFile"
           ref={inputRef}
           type="file"
           accept={ALLOWED_EXTS.join(',')}
