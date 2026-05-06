@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { Mic, Volume2, Music, AlertTriangle, X } from 'lucide-react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
@@ -117,66 +118,49 @@ export default function App() {
   return (
     <div style={{
       minHeight: '100vh',
+      width: '100vw',
       display: 'flex',
       flexDirection: 'column',
-      alignItems: 'center',
-      padding: '32px 16px 64px',
+      padding: '0',
     }}>
       {/* Header */}
-      <header style={{ textAlign: 'center', marginBottom: '30px' }}>
-        <div style={{ fontSize: '52px', marginBottom: '12px' }}>🎙️</div>
-        <h1 style={{
-          fontSize: 'clamp(24px, 4vw, 36px)',
-          fontWeight: 700,
-          marginBottom: '10px',
-          background: 'linear-gradient(135deg, #fff, #a78bfa)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-        }}>
-          Whisper Transcriber
-        </h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '16px', maxWidth: '480px', margin: '0 auto' }}>
-          Transcripción automática de audio con IA y generación de voz a partir de texto
-        </p>
-      </header>
-
       {/* Tabs */}
       <div style={{
-        display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '30px', background: 'var(--surface2)', padding: '6px', borderRadius: '12px'
+        display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '10px', background: 'var(--surface2)', padding: '6px', borderRadius: '12px'
       }}>
         <button
           onClick={() => setActiveTab('stt')}
           style={{
-            padding: '10px 24px', borderRadius: '8px', border: 'none',
+            padding: '15px 32px', borderRadius: '8px', border: 'none',
             background: activeTab === 'stt' ? 'var(--surface)' : 'transparent',
             color: activeTab === 'stt' ? 'var(--accent)' : 'var(--text-muted)',
-            fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+            fontWeight: 600, fontSize: '16px', cursor: 'pointer', transition: 'all 0.2s',
             boxShadow: activeTab === 'stt' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none'
           }}
         >
-          🎙️ Voz a Texto
+          <Mic size={18} /> Voz a Texto
         </button>
         <button
           onClick={() => setActiveTab('tts')}
           style={{
-            padding: '10px 24px', borderRadius: '8px', border: 'none',
+            padding: '15px 32px', borderRadius: '8px', border: 'none',
             background: activeTab === 'tts' ? 'var(--surface)' : 'transparent',
             color: activeTab === 'tts' ? 'var(--accent)' : 'var(--text-muted)',
-            fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+            fontWeight: 600, fontSize: '16px', cursor: 'pointer', transition: 'all 0.2s',
             boxShadow: activeTab === 'tts' ? '0 2px 8px rgba(0,0,0,0.2)' : 'none'
           }}
         >
-          🗣️ Texto a Voz
+          <Volume2 size={18} /> Texto a Voz
         </button>
       </div>
 
       {/* Contenido principal */}
-      <main style={{ width: '100%', maxWidth: '760px' }}>
+      <main style={{ width: '100%', flex: 1 }}>
         {activeTab === 'stt' ? (
           <>
-            {/* Upload Zone */}
+            {/* Upload + Grabación lado a lado */}
             {!result && (
-              <>
+              <div className="stt-panels">
                 <UploadZone
                   onFileSelected={handleFileSelected}
                   disabled={isProcessing}
@@ -185,7 +169,7 @@ export default function App() {
                   onRecordComplete={handleFileSelected}
                   disabled={isProcessing}
                 />
-              </>
+              </div>
             )}
 
             {/* Info del archivo seleccionado */}
@@ -203,7 +187,7 @@ export default function App() {
                 flexWrap: 'wrap',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '20px' }}>🎵</span>
+                  <Music size={20} />
                   <div>
                     <p style={{ fontWeight: 500, fontSize: '14px' }}>{file.name}</p>
                     <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
@@ -228,7 +212,7 @@ export default function App() {
                     cursor: 'pointer'
                   }}
                   title="Quitar archivo"
-                >✕</button>
+                ><X size={18} /></button>
               </div>
             )}
 
@@ -293,7 +277,7 @@ export default function App() {
                 borderRadius: 'var(--radius-sm)',
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <span style={{ fontSize: '18px', flexShrink: 0 }}>⚠️</span>
+                  <AlertTriangle size={18} />
                   <div>
                     <p style={{ color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
                       Error en la transcripción
@@ -349,7 +333,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer style={{ marginTop: '48px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+      <footer style={{ marginTop: '10px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
         <p>Powered by <strong style={{ color: 'var(--text)' }}>OpenAI Whisper</strong> & <strong style={{ color: 'var(--text)' }}>Web Speech API</strong></p>
       </footer>
     </div>

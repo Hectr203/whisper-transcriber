@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { CheckCircle, FileText, Music, Copy, Check, Download, RotateCcw } from 'lucide-react';
 
 export default function TranscriptionResult({ result, onReset }) {
   const [copied, setCopied] = useState(false);
@@ -66,14 +67,14 @@ export default function TranscriptionResult({ result, onReset }) {
         gap: '12px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '18px' }}>✅</span>
+          <CheckCircle size={18} />
           <span style={{ fontWeight: 600, color: 'var(--success)' }}>Transcripción lista</span>
         </div>
 
         <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
-          <span>📄 {result.wordCount?.toLocaleString()} palabras</span>
+          <span><FileText size={13} /> {result.wordCount?.toLocaleString()} palabras</span>
           <span>🔤 {result.charCount?.toLocaleString()} caracteres</span>
-          {result.fileName && <span>🎵 {result.fileName}</span>}
+          {result.fileName && <span><Music size={13} /> {result.fileName}</span>}
         </div>
       </div>
 
@@ -115,7 +116,7 @@ export default function TranscriptionResult({ result, onReset }) {
               color: copied ? 'var(--success)' : 'var(--accent)',
             }}
           >
-            {copied ? '✓ Copiado' : '📋 Copiar texto'}
+            {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar texto</>}
           </button>
 
           {/* Descargar TXT */}
@@ -129,7 +130,7 @@ export default function TranscriptionResult({ result, onReset }) {
             onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
             onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
           >
-            ⬇️ Descargar .txt
+            <Download size={14} /> Descargar .txt
           </button>
         </div>
 
@@ -145,7 +146,7 @@ export default function TranscriptionResult({ result, onReset }) {
           onMouseEnter={e => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'transparent'; }}
         >
-          🔄 Nueva transcripción
+          <RotateCcw size={14} /> Nueva transcripción
         </button>
       </div>
     </div>

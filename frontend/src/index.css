@@ -56,3 +56,22 @@ button {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+.stt-panels {
+  display: grid;
+  gap: 24px;
+  align-items: stretch;
+  grid-auto-rows: 1fr;
+}
+
+.stt-panels > * {
+  width: 100%;
+  min-height: 420px;
+  height: 100%;
+}
+
+@media (min-width: 900px) {
+  .stt-panels {
+    grid-template-columns: 1fr 1fr;
+  }
+}

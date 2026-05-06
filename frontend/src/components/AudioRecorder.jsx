@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Mic } from 'lucide-react';
 
 export default function AudioRecorder({ onRecordComplete, disabled }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -190,7 +191,8 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
   return (
     <div style={{
       width: '100%',
-      marginTop: '16px',
+      height: '100%',
+      marginTop: 0,
       padding: '24px',
       background: 'var(--surface)',
       border: '1px solid var(--border)',
@@ -198,12 +200,14 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      gap: '16px',
+      justifyContent: 'center',
+      gap: '18px',
+      textAlign: 'center',
       opacity: disabled ? 0.5 : 1,
       pointerEvents: disabled ? 'none' : 'auto'
     }}>
-      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
-        🎙️ Grabar Audio Directamente
+      <h3 style={{ margin: 0, fontSize: '22px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Mic size={22} /> Grabar Audio Directamente
       </h3>
       
       {!isRecording ? (
@@ -211,15 +215,18 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
           onClick={startRecording}
           disabled={disabled}
           style={{
-            padding: '12px 24px',
+            minWidth: '240px',
+            padding: '16px 28px',
             background: 'var(--accent)',
             color: 'white',
             border: 'none',
             borderRadius: 'var(--radius-sm)',
-            fontSize: '16px',
-            fontWeight: 600,
+            fontSize: '18px',
+            fontWeight: 700,
             cursor: 'pointer',
             transition: 'background 0.2s',
+            display: 'inline-flex',
+            justifyContent: 'center',
           }}
           onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
           onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}

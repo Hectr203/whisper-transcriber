@@ -1,4 +1,5 @@
 import React, { useRef, useState, useCallback } from 'react';
+import { AlertTriangle, Mic } from 'lucide-react';
 
 const ALLOWED_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
   'audio/ogg', 'audio/flac', 'audio/webm', 'video/mp4', 'video/webm'];
@@ -47,13 +48,17 @@ export default function UploadZone({ onFileSelected, disabled }) {
   const handleClick = () => { if (!disabled) inputRef.current?.click(); };
 
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div
         onClick={handleClick}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         style={{
+          display: 'flex',
+          flex: 1,
+          flexDirection: 'column',
+          justifyContent: 'center',
           border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`,
           borderRadius: 'var(--radius)',
           padding: '48px 32px',
@@ -76,7 +81,7 @@ export default function UploadZone({ onFileSelected, disabled }) {
           disabled={disabled}
         />
 
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎙️</div>
+        <div style={{ marginBottom: '16px' }}><Mic size={48} /></div>
 
         <p style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
           {dragOver ? 'Suelta el archivo aquí' : 'Arrastra tu archivo de audio'}
@@ -124,7 +129,7 @@ export default function UploadZone({ onFileSelected, disabled }) {
           alignItems: 'center',
           gap: '8px',
         }}>
-          <span>⚠️</span> {localError}
+          <AlertTriangle size={14} /> {localError}
         </div>
       )}
     </div>

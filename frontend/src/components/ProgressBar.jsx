@@ -1,10 +1,11 @@
 import React from 'react';
+import { Search, Scissors, Bot, CheckCircle, Check } from 'lucide-react';
 
 const STAGE_LABELS = {
-  analyzing:    { label: 'Analizando archivo',         icon: '🔍' },
-  splitting:    { label: 'Dividiendo en segmentos',    icon: '✂️' },
-  transcribing: { label: 'Transcribiendo con Whisper', icon: '🤖' },
-  complete:     { label: 'Transcripción completada',   icon: '✅' },
+  analyzing:    { label: 'Analizando archivo',         icon: <Search size={11} /> },
+  splitting:    { label: 'Dividiendo en segmentos',    icon: <Scissors size={11} /> },
+  transcribing: { label: 'Transcribiendo con Whisper', icon: <Bot size={11} /> },
+  complete:     { label: 'Transcripción completada',   icon: <CheckCircle size={11} /> },
 };
 
 export default function ProgressBar({ status }) {
@@ -86,7 +87,7 @@ export default function ProgressBar({ status }) {
               transition: 'all 0.3s ease',
             }}>
               <span style={{ fontSize: '11px' }}>
-                {idx < currentStageIdx ? '✓' : STAGE_LABELS[s].icon}
+                {idx < currentStageIdx ? <Check size={11} /> : STAGE_LABELS[s].icon}
               </span>
               <span style={{
                 fontSize: '11px',

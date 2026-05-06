@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -258,7 +259,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>✅</span>
+            <CheckCircle size={18} />
             <span style={{ fontWeight: 600, color: 'var(--success)' }}>Transcripción lista</span>
           </div>
         </div>
@@ -269,7 +270,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         
         {playState !== 'idle' ? (
           <div style={{
-            width: '100%', minHeight: '200px', maxHeight: '400px', overflowY: 'auto',
+            width: '100%', minHeight: '60vh', maxHeight: '80vh', overflowY: 'auto',
             background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--accent)',
             borderRadius: 'var(--radius-sm)', padding: '16px', fontSize: '18px', lineHeight: 2,
             whiteSpace: 'pre-wrap', fontFamily: 'Inter, system-ui, sans-serif'
@@ -292,7 +293,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             value={text} onChange={(e) => setText(e.target.value)}
             placeholder="Escribe tu texto..."
             style={{
-              width: '100%', minHeight: '200px', maxHeight: '400px', background: 'var(--bg)',
+              width: '100%', minHeight: '60vh', maxHeight: '80vh', background: 'var(--bg)',
               color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
               padding: '16px', fontSize: '15px', lineHeight: 1.8, resize: 'vertical', outline: 'none',
             }}
@@ -314,7 +315,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
               color: '#000', borderColor: 'transparent', fontWeight: 600,
             }}
           >
-            {playState === 'playing' ? '⏸️ Pausar lectura' : (playState==='paused' ? '▶️ Reanudar' : '▶️ Iniciar')}
+            {playState === 'playing' ? <><Pause size={14} /> Pausar lectura</> : (playState==='paused' ? <><Play size={14} /> Reanudar</> : <><Play size={14} /> Iniciar</>)}
           </button>
 
           {playState !== 'idle' && (
@@ -323,7 +324,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
                 onClick={handleStop}
                 style={{ ...btnBase, background: 'var(--error)', color: '#fff', borderColor: 'transparent', fontWeight: 600 }}
              >
-               ⏹️ Detener
+               <Square size={14} /> Detener
              </button>
           )}
           
@@ -351,7 +352,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
               opacity: (isDownloading || !text.trim()) ? 0.6 : 1,
             }}
           >
-            {isDownloading ? '⏳ Modulando MP3...' : '⬇️ Bajar Audio'}
+            {isDownloading ? <><Loader size={14} /> Modulando MP3...</> : <><Download size={14} /> Bajar Audio</>}
           </button>
         </div>
       </div>
@@ -366,7 +367,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
               borderColor: copied ? 'var(--success)' : 'var(--accent)', color: copied ? 'var(--success)' : 'var(--accent)'
             }}
           >
-            {copied ? '✓ Copiado' : '📋 Copiar transcripción'}
+            {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar transcripción</>}
           </button>
           
           <button
@@ -374,13 +375,13 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             onClick={handleDownloadTxt}
             style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
           >
-            📄 Descargar .txt
+            <FileText size={14} /> Descargar .txt
           </button>
         </div>
 
         {showReset && onReset && (
           <button type="button" onClick={onReset} style={{...btnBase, background: 'transparent', color: 'var(--text-muted)', borderColor: 'transparent'}}>
-            🔄 Nueva transcripción
+            <RotateCcw size={14} /> Nueva transcripción
           </button>
         )}
       </div>
