@@ -267,39 +267,6 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
       {/* Editor / Karaoke View */}
       <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        
-        {playState !== 'idle' ? (
-          <div style={{
-            width: '100%', minHeight: '60vh', maxHeight: '80vh', overflowY: 'auto',
-            background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--accent)',
-            borderRadius: 'var(--radius-sm)', padding: '16px', fontSize: '18px', lineHeight: 2,
-            whiteSpace: 'pre-wrap', fontFamily: 'Inter, system-ui, sans-serif'
-          }}>
-            {parsedElements.map((el) => {
-               if (el.type === 'text') return <span key={el.key} style={{opacity: 0.6}}>{el.val}</span>;
-               const isActive = el.token.charIndex === activeCharIndex;
-               return (
-                 <WordToken 
-                    key={el.key} 
-                    token={el.token} 
-                    isActive={isActive} 
-                    onClick={jumpToOffset}
-                 />
-               );
-            })}
-          </div>
-        ) : (
-          <textarea
-            value={text} onChange={(e) => setText(e.target.value)}
-            placeholder="Escribe tu texto..."
-            style={{
-              width: '100%', minHeight: '60vh', maxHeight: '80vh', background: 'var(--bg)',
-              color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-              padding: '16px', fontSize: '15px', lineHeight: 1.8, resize: 'vertical', outline: 'none',
-            }}
-          />
-        )}
-
         {/* TTS Advance Controls */}
         <div style={{ 
           display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--surface2)', 
@@ -355,6 +322,38 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             {isDownloading ? <><Loader size={14} /> Modulando MP3...</> : <><Download size={14} /> Bajar Audio</>}
           </button>
         </div>
+
+        {playState !== 'idle' ? (
+          <div style={{
+            width: '100%', minHeight: '60vh', maxHeight: '80vh', overflowY: 'auto',
+            background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--accent)',
+            borderRadius: 'var(--radius-sm)', padding: '16px', fontSize: '18px', lineHeight: 2,
+            whiteSpace: 'pre-wrap', fontFamily: 'Inter, system-ui, sans-serif'
+          }}>
+            {parsedElements.map((el) => {
+               if (el.type === 'text') return <span key={el.key} style={{opacity: 0.6}}>{el.val}</span>;
+               const isActive = el.token.charIndex === activeCharIndex;
+               return (
+                 <WordToken 
+                    key={el.key} 
+                    token={el.token} 
+                    isActive={isActive} 
+                    onClick={jumpToOffset}
+                 />
+               );
+            })}
+          </div>
+        ) : (
+          <textarea
+            value={text} onChange={(e) => setText(e.target.value)}
+            placeholder="Escribe tu texto..."
+            style={{
+              width: '100%', minHeight: '60vh', maxHeight: '80vh', background: 'var(--bg)',
+              color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+              padding: '16px', fontSize: '15px', lineHeight: 1.8, resize: 'vertical', outline: 'none',
+            }}
+          />
+        )}
       </div>
 
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)' }}>
