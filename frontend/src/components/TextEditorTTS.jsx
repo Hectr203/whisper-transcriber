@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader } from 'lucide-react';
+import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles } from 'lucide-react';
+import { generateHash, getTTSAudio, saveTTSAudio } from '../utils/historyStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -32,18 +33,31 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   const [speed, setSpeed] = useState(1);
   const [isDownloading, setIsDownloading] = useState(false);
   
-  // Guardamos un ref para leer la velocidad actualizada dentro de eventos asincronos si fuera necesario
   const speedRef = useRef(1);
   const [activeCharIndex, setActiveCharIndex] = useState(-1);
   const utteranceRef = useRef(null);
+  const audioRef = useRef(null);
+
+  // AI TTS State
+  const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('elevenLabsKey') || '');
+  const [useAITTS, setUseAITTS] = useState(() => localStorage.getItem('useAITTS') === 'true');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [showAIConfig, setShowAIConfig] = useState(false);
 
   const activeWordRef = useRef(null);
+
+  useEffect(() => { localStorage.setItem('elevenLabsKey', elevenLabsKey); }, [elevenLabsKey]);
+  useEffect(() => { localStorage.setItem('useAITTS', useAITTS); }, [useAITTS]);
 
   // Stop synthesis when component unmounts
   useEffect(() => {
     setText(initialText);
     return () => {
       if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
     };
   }, [initialText]);
 
@@ -87,17 +101,17 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     playFrom(offset);
   };
 
-  const playFrom = (offsetIndex) => {
-    if (!window.speechSynthesis) {
-      return alert("Tu navegador no soporta TTS nativo.");
-    }
+  const playFrom = async (offsetIndex) => {
     if (!text || !text.trim()) {
       return; // No hay texto para reproducir
     }
 
-    // Siempre cancelar y forzar 'resume' para destrabar colas buggeadas
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.resume();
+    // Stop current audio sources
+    if (audioRef.current) {
+       audioRef.current.pause();
+       audioRef.current.currentTime = 0;
+    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
 
     const sliceBuffer = text.substring(offsetIndex);
     if (!sliceBuffer.trim()) {
@@ -105,6 +119,72 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       setActiveCharIndex(-1);
       return;
     }
+
+    // AI TTS Logic
+    if (useAITTS && elevenLabsKey) {
+      setPlayState('playing');
+      setAiLoading(true);
+      setActiveCharIndex(offsetIndex); // We won't get word boundaries with free AI easily, just start highlighting from offset
+
+      try {
+        const hashKey = await generateHash(sliceBuffer);
+        const cached = await getTTSAudio(hashKey);
+        
+        let audioBlob;
+        
+        if (cached) {
+          audioBlob = cached.audioBlob;
+        } else {
+          const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJcg`, { // Voice: Fin
+            method: 'POST',
+            headers: {
+              'Accept': 'audio/mpeg',
+              'Content-Type': 'application/json',
+              'xi-api-key': elevenLabsKey
+            },
+            body: JSON.stringify({
+              text: sliceBuffer,
+              model_id: 'eleven_multilingual_v2',
+              voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+            })
+          });
+
+          if (!res.ok) {
+            console.warn('ElevenLabs API Error, cayendo a TTS nativo');
+            throw new Error('ElevenLabs failed');
+          }
+
+          audioBlob = await res.blob();
+          await saveTTSAudio(hashKey, audioBlob); // Cachéamos el audio
+        }
+
+        const url = URL.createObjectURL(audioBlob);
+        const audio = new Audio(url);
+        audio.playbackRate = speedRef.current;
+        audioRef.current = audio;
+        
+        audio.onended = () => {
+          setPlayState('idle');
+          setActiveCharIndex(-1);
+        };
+        
+        await audio.play();
+        setAiLoading(false);
+        return; // Success, don't execute native fallback
+      } catch (err) {
+        console.error(err);
+        setAiLoading(false);
+        // Continuar con fallback nativo
+      }
+    }
+
+    // Fallback TTS Nativo
+    if (!window.speechSynthesis) {
+      return alert("Tu navegador no soporta TTS nativo.");
+    }
+
+    // Siempre cancelar y forzar 'resume' para destrabar colas buggeadas
+    window.speechSynthesis.resume();
 
     utteranceRef.current = null;
     setActiveCharIndex(offsetIndex);
@@ -154,16 +234,26 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   };
 
   const handleTogglePlay = () => {
-    if (!window.speechSynthesis) return;
-
     if (playState === 'playing') {
-      window.speechSynthesis.pause();
-      setPlayState('paused');
-      return;
+      if (audioRef.current && !audioRef.current.paused) {
+         audioRef.current.pause();
+         setPlayState('paused');
+         return;
+      }
+      if (window.speechSynthesis) {
+        window.speechSynthesis.pause();
+        setPlayState('paused');
+        return;
+      }
     }
 
     if (playState === 'paused') {
-      if (window.speechSynthesis.paused) {
+      if (audioRef.current && audioRef.current.paused) {
+         audioRef.current.play();
+         setPlayState('playing');
+         return;
+      }
+      if (window.speechSynthesis && window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
         setPlayState('playing');
         return;
@@ -174,7 +264,11 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   };
 
   const handleStop = () => {
-    if (window.speechSynthesis.speaking || window.speechSynthesis.paused) {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.paused)) {
       window.speechSynthesis.cancel();
     }
     utteranceRef.current = null;
@@ -186,7 +280,10 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   const handleSpeedChange = (newSpeed) => {
     setSpeed(newSpeed);
     speedRef.current = newSpeed;
-    if (playState === 'playing' && activeCharIndex >= 0) {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = newSpeed;
+    }
+    if (playState === 'playing' && activeCharIndex >= 0 && (!audioRef.current || audioRef.current.paused)) {
       playFrom(activeCharIndex);
     }
   };
@@ -276,13 +373,16 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           <button
             type="button"
             onClick={handleTogglePlay}
+            disabled={aiLoading}
             style={{
               ...btnBase,
               background: playState === 'playing' ? 'var(--warning)' : 'var(--success)',
               color: '#000', borderColor: 'transparent', fontWeight: 600,
+              opacity: aiLoading ? 0.6 : 1,
             }}
           >
-            {playState === 'playing' ? <><Pause size={14} /> Pausar lectura</> : (playState==='paused' ? <><Play size={14} /> Reanudar</> : <><Play size={14} /> Iniciar</>)}
+            {aiLoading ? <><Loader size={14} className="spin" /> Generando IA...</> : 
+             (playState === 'playing' ? <><Pause size={14} /> Pausar lectura</> : (playState==='paused' ? <><Play size={14} /> Reanudar</> : <><Play size={14} /> Iniciar</>))}
           </button>
 
           {playState !== 'idle' && (
@@ -310,6 +410,18 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
           <div style={{ flex: 1 }} />
 
+          {/* Botón para Mostrar Config AI */}
+          <button 
+            type="button"
+            onClick={() => setShowAIConfig(!showAIConfig)}
+            style={{
+              ...btnBase, background: useAITTS && elevenLabsKey ? 'var(--accent-light)' : 'transparent', color: 'var(--accent)',
+              borderColor: useAITTS && elevenLabsKey ? 'var(--accent)' : 'var(--border)'
+            }}
+          >
+            <Sparkles size={14} /> Voz IA
+          </button>
+
           <button 
             type="button"
             onClick={handleDownloadAudio}
@@ -322,6 +434,43 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             {isDownloading ? <><Loader size={14} /> Modulando MP3...</> : <><Download size={14} /> Bajar Audio</>}
           </button>
         </div>
+
+        {/* Panel de Configuración IA */}
+        {showAIConfig && (
+          <div style={{
+            background: 'var(--surface2)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)',
+            padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', animation: 'fadeIn 0.2s'
+          }}>
+            <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
+              <Settings size={16} /> Configuración de Voz IA (ElevenLabs)
+            </h4>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+              Usa el API gratuito de ElevenLabs para una voz realista superior. Si falla o se acaban los créditos, 
+              automáticamente volveremos a la voz del navegador.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input 
+                type="password" 
+                placeholder="Ingresa tu API Key de ElevenLabs" 
+                value={elevenLabsKey}
+                onChange={(e) => setElevenLabsKey(e.target.value)}
+                style={{
+                  padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+                  background: 'var(--bg)', color: 'var(--text)', minWidth: '300px', flex: 1
+                }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
+                <input 
+                  type="checkbox" 
+                  checked={useAITTS} 
+                  onChange={(e) => setUseAITTS(e.target.checked)}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--accent)' }}
+                />
+                Activar Voz IA
+              </label>
+            </div>
+          </div>
+        )}
 
         {playState !== 'idle' ? (
           <div style={{

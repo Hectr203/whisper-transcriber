@@ -3,6 +3,7 @@ import { Mic } from 'lucide-react';
 
 export default function AudioRecorder({ onRecordComplete, disabled }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [error, setError] = useState('');
   
@@ -167,6 +168,7 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
 
       mediaRecorder.start();
       setIsRecording(true);
+      setIsPaused(false);
       startTimer();
     } catch (err) {
       console.error('Error al acceder al micrófono:', err);
@@ -174,10 +176,27 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
     }
   };
 
+  const pauseRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.pause();
+      setIsPaused(true);
+      stopTimer();
+    }
+  };
+
+  const resumeRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+      mediaRecorderRef.current.resume();
+      setIsPaused(false);
+      startTimer();
+    }
+  };
+
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && (mediaRecorderRef.current.state === 'recording' || mediaRecorderRef.current.state === 'paused')) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setIsPaused(false);
       stopTimer();
     }
   };
@@ -242,17 +261,17 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
             gap: '8px',
             fontSize: '18px',
             fontWeight: 600,
-            color: 'var(--error)'
+            color: isPaused ? 'var(--warning)' : 'var(--error)'
           }}>
             <span style={{
               display: 'inline-block',
               width: '12px',
               height: '12px',
-              backgroundColor: 'var(--error)',
+              backgroundColor: isPaused ? 'var(--warning)' : 'var(--error)',
               borderRadius: '50%',
-              animation: 'pulse 1.5s infinite',
+              animation: isPaused ? 'none' : 'pulse 1.5s infinite',
             }} />
-            Grabando: {formatTime(recordingTime)}
+            {isPaused ? 'Pausado' : 'Grabando'}: {formatTime(recordingTime)}
           </div>
 
           <canvas
@@ -268,28 +287,66 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
             }}
           />
 
-          <button
-            onClick={stopRecording}
-            style={{
-              padding: '12px 24px',
-              background: 'transparent',
-              color: 'var(--error)',
-              border: '1px solid var(--error)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: '16px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            ■ Detener y Finalizar
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {isPaused ? (
+              <button
+                onClick={resumeRecording}
+                style={{
+                  padding: '12px 20px',
+                  background: 'var(--success)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                ▶ Continuar
+              </button>
+            ) : (
+              <button
+                onClick={pauseRecording}
+                style={{
+                  padding: '12px 20px',
+                  background: 'var(--warning)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                ⏸ Pausar
+              </button>
+            )}
+            
+            <button
+              onClick={stopRecording}
+              style={{
+                padding: '12px 20px',
+                background: 'transparent',
+                color: 'var(--error)',
+                border: '1px solid var(--error)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              ■ Finalizar
+            </button>
+          </div>
         </div>
       )}
 

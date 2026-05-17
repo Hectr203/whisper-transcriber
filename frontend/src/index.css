@@ -5,32 +5,52 @@
 }
 
 :root {
-  --bg: #0f0f13;
-  --surface: #1a1a24;
-  --surface2: #22222f;
-  --border: #2e2e3e;
-  --accent: #6c63ff;
-  --accent-hover: #5a52e0;
-  --accent-light: rgba(108, 99, 255, 0.12);
-  --text: #e8e8f0;
-  --text-muted: #8888aa;
+  /* Dark mode variables (Default - OLED style) */
+  --bg: #0F0F23;
+  --surface: #1E1B4B;
+  --surface2: #312E81;
+  --border: #4338CA;
+  --accent: #F97316;
+  --accent-hover: #EA580C;
+  --accent-light: rgba(249, 115, 22, 0.12);
+  --text: #F8FAFC;
+  --text-muted: #94A3B8;
   --success: #4ade80;
   --error: #f87171;
   --warning: #fbbf24;
-  --radius: 12px;
+  --radius: 16px;
   --radius-sm: 8px;
 }
+
+[data-theme='light'] {
+  --bg: #F5F5F7;
+  --surface: #FFFFFF;
+  --surface2: #E2E8F0;
+  --border: #CBD5E1;
+  --accent: #F97316;
+  --accent-hover: #EA580C;
+  --accent-light: rgba(249, 115, 22, 0.12);
+  --text: #0F172A;
+  --text-muted: #475569;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
 
 html, body {
   height: 100%;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+code, pre {
+  font-family: 'Fira Code', monospace;
 }
 
 button {
@@ -55,6 +75,15 @@ button {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 
 .stt-panels {

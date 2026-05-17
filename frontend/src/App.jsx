@@ -1,9 +1,11 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Mic, Volume2, Music, AlertTriangle, X } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Mic, Volume2, Music, AlertTriangle, X, Download, Moon, Sun, History as HistoryIcon } from 'lucide-react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
 import TextEditorTTS from './components/TextEditorTTS';
+import HistoryPanel from './components/HistoryPanel';
+import { saveHistoryItem, getHistoryItems } from './utils/historyStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -15,8 +17,31 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [currentHistoryId, setCurrentHistoryId] = useState(null);
 
   const eventSourceRef = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    try {
+      const items = await getHistoryItems();
+      setHistory(items);
+    } catch (err) {
+      console.error('Error loading history:', err);
+    }
+  };
 
   const reset = useCallback(() => {
     setFile(null);
@@ -24,6 +49,7 @@ export default function App() {
     setResult(null);
     setError(null);
     setIsProcessing(false);
+    setCurrentHistoryId(null);
     if (eventSourceRef.current) eventSourceRef.current.close();
   }, []);
 
@@ -32,6 +58,33 @@ export default function App() {
     setError(null);
     setResult(null);
     setStatus(null);
+    setCurrentHistoryId(null); // New file, new history tracking
+  }, []);
+
+  const handleDownloadAudio = useCallback(() => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = file.name || 'audio.webm';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }, [file]);
+
+  const handleLoadHistoryItem = useCallback((item) => {
+    setFile(item.audioBlob);
+    setCurrentHistoryId(item.id);
+    if (item.transcription) {
+      setResult(item.metadata);
+    } else {
+      setResult(null);
+    }
+    setError(item.status === 'error' ? item.errorMessage : null);
+    setStatus(null);
+    setShowHistory(false);
   }, []);
 
   const handleTranscribe = useCallback(async () => {
@@ -44,8 +97,25 @@ export default function App() {
     const formData = new FormData();
     formData.append('audio', file);
 
-    // Usamos fetch con ReadableStream para SSE sobre POST
+    let historyId = currentHistoryId;
+    if (!historyId) {
+      historyId = Date.now().toString();
+      setCurrentHistoryId(historyId);
+    }
+
+    const baseHistoryItem = {
+      id: historyId,
+      timestamp: Date.now(),
+      fileName: file.name,
+      audioBlob: file,
+      transcription: null,
+      status: 'analyzing'
+    };
+
     try {
+      await saveHistoryItem(baseHistoryItem);
+      await loadHistory();
+
       setStatus({ stage: 'analyzing', message: 'Conectando con el servidor...', progress: 2 });
 
       const response = await fetch(`${API_BASE}/transcription/upload`, {
@@ -86,6 +156,13 @@ export default function App() {
                 setStatus({ stage: 'complete', message: 'Transcripción completada', progress: 100 });
                 setResult(data);
                 setIsProcessing(false);
+                
+                // Update History
+                baseHistoryItem.status = 'complete';
+                baseHistoryItem.transcription = data.transcription;
+                baseHistoryItem.metadata = data;
+                saveHistoryItem(baseHistoryItem).then(loadHistory);
+
               } else if (currentEvent === 'error') {
                 throw new Error(data.message || 'Error en la transcripción');
               }
@@ -104,8 +181,13 @@ export default function App() {
       setError(err.message || 'Error desconocido al procesar el archivo');
       setIsProcessing(false);
       setStatus(null);
+      
+      // Update History Error
+      baseHistoryItem.status = 'error';
+      baseHistoryItem.errorMessage = err.message || 'Error desconocido';
+      saveHistoryItem(baseHistoryItem).then(loadHistory);
     }
-  }, [file, isProcessing]);
+  }, [file, isProcessing, currentHistoryId]);
 
   const handleCancel = useCallback(() => {
     if (eventSourceRef.current) eventSourceRef.current.close();
@@ -118,15 +200,74 @@ export default function App() {
   return (
     <div style={{
       minHeight: '100vh',
-      width: '100vw',
+      width: '100%',
+      maxWidth: '1200px',
+      margin: '0 auto',
       display: 'flex',
       flexDirection: 'column',
-      padding: '0',
+      padding: '24px',
+      position: 'relative',
     }}>
-      {/* Header */}
+      {/* Header Utilities (Theme & History) */}
+      <div style={{
+        position: 'absolute',
+        top: '16px',
+        right: '20px',
+        display: 'flex',
+        gap: '12px',
+        zIndex: 50,
+      }}>
+        <button
+          onClick={() => setShowHistory(!showHistory)}
+          style={{
+            background: 'var(--surface2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: 500,
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}
+        >
+          <HistoryIcon size={18} /> Historial
+        </button>
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          style={{
+            background: 'var(--surface2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            padding: '8px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s',
+          }}
+          title="Cambiar tema"
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}
+        >
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+      </div>
+
+      {showHistory && (
+        <HistoryPanel 
+          history={history} 
+          onLoadItem={handleLoadHistoryItem} 
+          onClose={() => setShowHistory(false)} 
+        />
+      )}
+
       {/* Tabs */}
       <div style={{
-        display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '10px', background: 'var(--surface2)', padding: '6px', borderRadius: '12px'
+        display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '10px', background: 'var(--surface2)', padding: '6px', borderRadius: '12px', marginTop: '60px', alignSelf: 'center'
       }}>
         <button
           onClick={() => setActiveTab('stt')}
@@ -155,181 +296,206 @@ export default function App() {
       </div>
 
       {/* Contenido principal */}
-      <main style={{ width: '100%', flex: 1 }}>
-        {activeTab === 'stt' ? (
-          <>
-            {/* Upload + Grabación lado a lado */}
-            {!result && (
-              <div className="stt-panels">
-                <UploadZone
-                  onFileSelected={handleFileSelected}
-                  disabled={isProcessing}
-                />
-                <AudioRecorder
-                  onRecordComplete={handleFileSelected}
-                  disabled={isProcessing}
-                />
-              </div>
-            )}
+      <main style={{ width: '100%', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        
+        {/* STT TAB */}
+        <div style={{ display: activeTab === 'stt' ? 'block' : 'none', flex: 1 }}>
+          {!result && (
+            <div className="stt-panels">
+              <UploadZone
+                onFileSelected={handleFileSelected}
+                disabled={isProcessing}
+              />
+              <AudioRecorder
+                onRecordComplete={handleFileSelected}
+                disabled={isProcessing}
+              />
+            </div>
+          )}
 
-            {/* Info del archivo seleccionado */}
-            {file && !result && !isProcessing && (
-              <div style={{
-                marginTop: '16px',
-                padding: '14px 18px',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-                flexWrap: 'wrap',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Music size={20} />
-                  <div>
-                    <p style={{ fontWeight: 500, fontSize: '14px' }}>{file.name}</p>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                      {fileSizeMB} MB
-                      {isLargeFile && (
-                        <span style={{ marginLeft: '8px', color: 'var(--warning)' }}>
-                          — Se dividirá automáticamente en segmentos
-                        </span>
-                      )}
-                    </p>
-                  </div>
+          {/* Info del archivo seleccionado */}
+          {file && !result && !isProcessing && (
+            <div style={{
+              marginTop: '16px',
+              padding: '14px 18px',
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Music size={20} />
+                <div>
+                  <p style={{ fontWeight: 500, fontSize: '14px', margin: 0 }}>{file.name}</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>
+                    {fileSizeMB} MB
+                    {isLargeFile && (
+                      <span style={{ marginLeft: '8px', color: 'var(--warning)' }}>
+                        — Se dividirá automáticamente en segmentos
+                      </span>
+                    )}
+                  </p>
                 </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
-                  onClick={() => { setFile(null); setError(null); }}
+                  onClick={handleDownloadAudio}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent)',
+                    fontSize: '18px',
+                    padding: '6px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    transition: 'background 0.2s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-light)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  title="Descargar audio"
+                ><Download size={18} /></button>
+                <button
+                  onClick={() => { setFile(null); setError(null); setCurrentHistoryId(null); }}
                   style={{
                     background: 'none',
                     border: 'none',
                     color: 'var(--text-muted)',
                     fontSize: '18px',
-                    padding: '4px',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
+                    padding: '6px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    transition: 'background 0.2s'
                   }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   title="Quitar archivo"
                 ><X size={18} /></button>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Botón transcribir */}
-            {file && !result && !isProcessing && (
+          {/* Botón transcribir */}
+          {file && !result && !isProcessing && (
+            <button
+              onClick={handleTranscribe}
+              style={{
+                marginTop: '16px',
+                width: '100%',
+                padding: '14px',
+                background: 'var(--accent)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '16px',
+                fontWeight: 600,
+                letterSpacing: '0.02em',
+                transition: 'background 0.2s',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
+            >
+              Transcribir con Whisper AI →
+            </button>
+          )}
+
+          {/* Progreso */}
+          {isProcessing && status && (
+            <>
+              <ProgressBar status={status} />
               <button
-                onClick={handleTranscribe}
+                onClick={handleCancel}
                 style={{
-                  marginTop: '16px',
+                  marginTop: '12px',
                   width: '100%',
-                  padding: '14px',
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  border: 'none',
+                  padding: '10px',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
                   borderRadius: 'var(--radius-sm)',
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  letterSpacing: '0.02em',
-                  transition: 'background 0.2s',
+                  fontSize: '14px',
+                  transition: 'all 0.2s',
                   cursor: 'pointer'
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.borderColor = 'var(--error)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
               >
-                Transcribir con Whisper AI →
+                Cancelar
               </button>
-            )}
+            </>
+          )}
 
-            {/* Progreso */}
-            {isProcessing && status && (
-              <>
-                <ProgressBar status={status} />
-                <button
-                  onClick={handleCancel}
-                  style={{
-                    marginTop: '12px',
-                    width: '100%',
-                    padding: '10px',
-                    background: 'transparent',
-                    color: 'var(--text-muted)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '14px',
-                    transition: 'all 0.2s',
-                    cursor: 'pointer'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.borderColor = 'var(--error)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
-                >
-                  Cancelar
-                </button>
-              </>
-            )}
-
-            {/* Error */}
-            {error && (
-              <div style={{
-                marginTop: '16px',
-                padding: '16px 20px',
-                background: 'rgba(248, 113, 113, 0.08)',
-                border: '1px solid rgba(248, 113, 113, 0.3)',
-                borderRadius: 'var(--radius-sm)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <AlertTriangle size={18} />
-                  <div>
-                    <p style={{ color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
-                      Error en la transcripción
-                    </p>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>{error}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setError(null)}
-                  style={{
-                    marginTop: '12px',
-                    padding: '8px 16px',
-                    background: 'var(--surface2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: 'var(--text)',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Intentar de nuevo
-                </button>
-              </div>
-            )}
-
-            {/* Resultado */}
-            {result && (
-              <TextEditorTTS 
-                initialText={result.transcription} 
-                initialMetadata={result}
-                onReset={reset}
-                showReset={true}
-              />
-            )}
-          </>
-        ) : (
-          <div style={{ animation: 'fadeIn 0.3s' }}>
-            <p style={{ 
-              color: 'var(--text-muted)', 
-              marginBottom: '20px', 
-              textAlign: 'center', 
-              fontSize: '15px' 
+          {/* Error */}
+          {error && (
+            <div style={{
+              marginTop: '16px',
+              padding: '16px 20px',
+              background: 'rgba(248, 113, 113, 0.08)',
+              border: '1px solid rgba(248, 113, 113, 0.3)',
+              borderRadius: 'var(--radius-sm)',
             }}>
-              Escribe o pega tu texto aquí para convertirlo a audio al instante. 
-              Puedes escuchar e interactuar con el texto libremente, y descargar el archivo MP3 cuando estés listo.
-            </p>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                <AlertTriangle size={18} />
+                <div>
+                  <p style={{ color: 'var(--error)', fontWeight: 600, marginBottom: '4px' }}>
+                    Error en la transcripción
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>{error}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                style={{
+                  marginTop: '12px',
+                  padding: '8px 16px',
+                  background: 'var(--surface2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text)',
+                  fontSize: '13px',
+                  cursor: 'pointer'
+                }}
+              >
+                Intentar de nuevo
+              </button>
+            </div>
+          )}
+
+          {/* Resultado */}
+          {result && (
             <TextEditorTTS 
-              initialText="" 
-              showReset={false}
+              initialText={result.transcription} 
+              initialMetadata={result}
+              onReset={reset}
+              showReset={true}
             />
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* TTS TAB */}
+        <div style={{ display: activeTab === 'tts' ? 'block' : 'none', flex: 1, animation: 'fadeIn 0.3s' }}>
+          <p style={{ 
+            color: 'var(--text-muted)', 
+            marginBottom: '20px', 
+            textAlign: 'center', 
+            fontSize: '15px' 
+          }}>
+            Escribe o pega tu texto aquí para convertirlo a audio al instante. 
+            Puedes escuchar e interactuar con el texto libremente, y descargar el archivo MP3 cuando estés listo.
+          </p>
+          <TextEditorTTS 
+            initialText="" 
+            showReset={false}
+          />
+        </div>
       </main>
 
       {/* Footer */}
