@@ -7,7 +7,26 @@ const transcriptionRoutes = require('./routes/transcription');
 const ttsRoutes = require('./routes/tts');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = parseInt(process.env.PORT, 10) || 3001;
+
+const net = require('net');
+
+async function findFreePort(startPort, attempts = 10) {
+  let port = startPort;
+  for (let i = 0; i < attempts; i++) {
+    /* eslint-disable no-await-in-loop */
+    const isFree = await new Promise((resolve) => {
+      const tester = net.createServer()
+        .once('error', () => { resolve(false); })
+        .once('listening', () => {
+          tester.close(() => resolve(true));
+        }).listen(port);
+    });
+    if (isFree) return port;
+    port += 1;
+  }
+  throw new Error(`No free port found starting at ${startPort}`);
+}
 
 // Asegurar que los directorios temporales existan
 const tempDir = path.resolve(process.env.TEMP_DIR || './src/temp');
@@ -62,12 +81,27 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🎙️  Whisper Transcriber Backend`);
-  console.log(`✅  Servidor corriendo en http://localhost:${PORT}`);
-  console.log(`📁  Directorio temporal: ${tempDir}`);
-  console.log(`🔑  API Key configurada: ${process.env.GROQ_API_KEY ? 'Sí' : 'NO - configura .env'}\n`);
-});
+// Encontrar puerto libre y arrancar servidor
+(async () => {
+  try {
+    const usePort = await findFreePort(PORT, 20);
+    const server = app.listen(usePort, () => {
+      console.log(`\n🎙️  Whisper Transcriber Backend`);
+      console.log(`✅  Servidor corriendo en http://localhost:${usePort}`);
+      console.log(`📁  Directorio temporal: ${tempDir}`);
+      console.log(`🔑  API Key configurada: ${process.env.GROQ_API_KEY ? 'Sí' : 'NO - configura .env'}\n`);
+      if (usePort !== PORT) console.warn(`Puerto ${PORT} estaba en uso - usando ${usePort} en su lugar.`);
+    });
+
+    server.on('error', (err) => {
+      console.error('Server error:', err);
+      process.exit(1);
+    });
+  } catch (err) {
+    console.error('No se pudo encontrar un puerto libre:', err.message || err);
+    process.exit(1);
+  }
+})();
 
 // Limpiar archivos temporales al cerrar
 process.on('SIGTERM', cleanup);

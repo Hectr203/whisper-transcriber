@@ -37,12 +37,17 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   const [activeCharIndex, setActiveCharIndex] = useState(-1);
   const utteranceRef = useRef(null);
   const audioRef = useRef(null);
+  const voicesRef = useRef([]);
 
   // AI TTS State
   const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('elevenLabsKey') || '');
   const [useAITTS, setUseAITTS] = useState(() => localStorage.getItem('useAITTS') === 'true');
   const [aiLoading, setAiLoading] = useState(false);
   const [showAIConfig, setShowAIConfig] = useState(false);
+  const [voicesCount, setVoicesCount] = useState(0);
+  const [voicesList, setVoicesList] = useState([]);
+  const [lastTTSError, setLastTTSError] = useState(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const activeWordRef = useRef(null);
 
@@ -60,6 +65,33 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       }
     };
   }, [initialText]);
+
+  // Preload available voices and handle voiceschanged across browsers
+  useEffect(() => {
+    if (!window.speechSynthesis) return;
+
+    const loadVoices = () => {
+      try {
+        const v = window.speechSynthesis.getVoices() || [];
+        voicesRef.current = v;
+        setVoicesCount(v.length);
+        setVoicesList(v.map(x => `${x.name || ''} (${x.lang || ''})`));
+      } catch (e) {
+        voicesRef.current = [];
+        setVoicesCount(0);
+        setVoicesList([]);
+      }
+    };
+
+    loadVoices();
+
+    const handler = () => loadVoices();
+    window.speechSynthesis.addEventListener && window.speechSynthesis.addEventListener('voiceschanged', handler);
+
+    return () => {
+      window.speechSynthesis.removeEventListener && window.speechSynthesis.removeEventListener('voiceschanged', handler);
+    };
+  }, []);
 
   // Actualizar ref speed
   useEffect(() => { speedRef.current = speed; }, [speed]);
@@ -102,6 +134,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   };
 
   const playFrom = async (offsetIndex) => {
+    console.debug('playFrom called, offsetIndex=', offsetIndex);
     if (!text || !text.trim()) {
       return; // No hay texto para reproducir
     }
@@ -190,50 +223,303 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     setActiveCharIndex(offsetIndex);
     setPlayState('playing'); // Cambiar estado inmediatamente para feedback visual
 
-    const utterance = new SpeechSynthesisUtterance(sliceBuffer);
-    utterance.rate = speedRef.current;
-    utterance.lang = 'es-ES';
+    // Helpers: dividir en trozos manejables para evitar errores de síntesis en algunos navegadores
+    const chunkText = (str, maxLen = 220) => {
+      const sentences = str.split(/([.!?]\s+)/);
+      const chunks = [];
+      let buffer = '';
+      for (let i = 0; i < sentences.length; i++) {
+        const s = sentences[i];
+        if ((buffer + s).length > maxLen && buffer.length > 0) {
+          chunks.push(buffer);
+          buffer = s;
+        } else {
+          buffer += s;
+        }
+      }
+      if (buffer) chunks.push(buffer);
+      // If still too long chunks, force split
+      return chunks.flatMap(c => c.length > maxLen ? c.match(new RegExp('.{1,' + maxLen + '}', 'g')) : [c]);
+    };
 
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const esVoice = voices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
-      if (esVoice) utterance.voice = esVoice;
-    }
+    const voices = (voicesRef.current && voicesRef.current.length > 0)
+      ? voicesRef.current
+      : (window.speechSynthesis.getVoices() || []);
 
-    // Al cortar el string, el index devuelto arranca en 0 nuevamente. Usamos el offsetIndex para proyectarlo visualmente.
-    utterance.onboundary = (e) => {
-      if (e && typeof e.charIndex === 'number') {
-        setActiveCharIndex(offsetIndex + e.charIndex);
+    // Helper: generar con ElevenLabs y reproducir (reutiliza cache)
+    const generateAIAndPlay = async (textToSpeak) => {
+      if (!textToSpeak || !textToSpeak.trim()) return;
+      setAiLoading(true);
+      setPlayState('playing');
+      try {
+        const hashKey = await generateHash(textToSpeak);
+        const cached = await getTTSAudio(hashKey);
+        let audioBlob;
+        if (cached) {
+          audioBlob = cached.audioBlob;
+        } else {
+          if (!elevenLabsKey) throw new Error('No ElevenLabs API key');
+          const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJcg`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'audio/mpeg',
+              'Content-Type': 'application/json',
+              'xi-api-key': elevenLabsKey
+            },
+            body: JSON.stringify({ text: textToSpeak, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.75 } })
+          });
+          if (!res.ok) throw new Error('ElevenLabs failed');
+          audioBlob = await res.blob();
+          await saveTTSAudio(hashKey, audioBlob);
+        }
+
+        const url = URL.createObjectURL(audioBlob);
+        const audio = new Audio(url);
+        audio.playbackRate = speedRef.current;
+        audioRef.current = audio;
+        return new Promise((resolve, reject) => {
+          audio.onended = () => { setPlayState('idle'); setActiveCharIndex(-1); resolve(); };
+          audio.onerror = (e) => { reject(e); };
+          audio.play().catch(reject);
+        });
+      } finally {
+        setAiLoading(false);
       }
     };
 
-    utterance.onstart = () => {
+    // Fallback al backend local si la síntesis nativa falla y no hay ElevenLabs
+    const generateBackendAndPlay = async (textToSpeak) => {
+      if (!textToSpeak || !textToSpeak.trim()) return;
       setPlayState('playing');
+      try {
+        const res = await fetch(`${API_BASE}/tts/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: textToSpeak, lang: 'es', speed: speedRef.current })
+        });
+        if (!res.ok) throw new Error('Backend TTS failed');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.playbackRate = speedRef.current;
+        audioRef.current = audio;
+        return new Promise((resolve, reject) => {
+          audio.onended = () => { setPlayState('idle'); setActiveCharIndex(-1); resolve(); };
+          audio.onerror = (e) => { reject(e); };
+          audio.play().catch(reject);
+        });
+      } finally {
+        // nothing
+      }
     };
 
-    utterance.onend = (e) => {
-      if (utteranceRef.current !== utterance) return;
-      utteranceRef.current = null;
-      setPlayState('idle');
-      setActiveCharIndex(-1);
+    // Si no hay voces detectadas en el navegador, evitar usar Web Speech API
+    // y usar fallback directo (ElevenLabs o backend) para evitar bloqueo en Brave/Chromium.
+    if (!voices || voices.length === 0) {
+      console.warn('No hay voces detectadas en el navegador, usando fallback de audio.');
+      setLastTTSError('no-voices-detected');
+      // Preferir ElevenLabs si está activado y hay key
+      const remainingAll = sliceBuffer;
+      if (useAITTS && elevenLabsKey) {
+        try {
+          await generateAIAndPlay(remainingAll);
+          return;
+        } catch (aiErr) {
+          console.error('ElevenLabs fallback failed:', aiErr);
+          setLastTTSError(aiErr && aiErr.message ? aiErr.message : 'AI fallback failed');
+        }
+      }
+
+      // Intentar backend local
+      try {
+        await generateBackendAndPlay(remainingAll);
+        return;
+      } catch (beErr) {
+        console.error('Backend fallback failed:', beErr);
+        setLastTTSError(beErr && beErr.message ? beErr.message : 'Backend fallback failed');
+        setPlayState('idle');
+        setActiveCharIndex(-1);
+        return;
+      }
+    }
+
+    const selectVoice = () => {
+      if (!voices || voices.length === 0) return null;
+      let esVoice = voices.find(v => v.lang && typeof v.lang === 'string' && v.lang.toLowerCase().startsWith('es'));
+      if (!esVoice) esVoice = voices.find(v => v.name && /google|microsoft|chrome/i.test(v.name));
+      return esVoice || voices[0] || null;
     };
 
-    utterance.onerror = (e) => {
-      console.error("Error en SpeechSynthesis:", e);
-      if (utteranceRef.current !== utterance) return;
-      utteranceRef.current = null;
-      setPlayState('idle');
-      setActiveCharIndex(-1);
+    const chunks = chunkText(sliceBuffer, 220);
+    let cumulativeOffset = 0;
+
+    const speakChunk = (chunk, attempt = 0) => {
+      return new Promise((resolve, reject) => {
+        try {
+          const u = new SpeechSynthesisUtterance(chunk);
+          u.rate = speedRef.current;
+          u.lang = 'es-ES';
+          const voice = selectVoice();
+          if (voice) u.voice = voice;
+
+          u.onboundary = (e) => {
+            if (e && typeof e.charIndex === 'number') {
+              setActiveCharIndex(offsetIndex + cumulativeOffset + e.charIndex);
+            }
+          };
+
+          u.onstart = () => {
+            utteranceRef.current = u;
+            setPlayState('playing');
+          };
+
+          u.onend = () => {
+            if (utteranceRef.current !== u) { resolve(); return; }
+            utteranceRef.current = null;
+            cumulativeOffset += chunk.length;
+            resolve();
+          };
+
+          u.onerror = (e) => {
+            console.error('SpeechSynthesis chunk error:', e, {chunkLen: chunk.length, attempt});
+            utteranceRef.current = null;
+            // Retry once with no voice assigned (some engines choke on certain voices)
+            if (attempt === 0) {
+              try {
+                const retryUtter = new SpeechSynthesisUtterance(chunk);
+                retryUtter.rate = speedRef.current;
+                retryUtter.lang = 'es-ES';
+                retryUtter.onend = () => { cumulativeOffset += chunk.length; resolve(); };
+                retryUtter.onerror = (err2) => { console.error('Retry failed:', err2); reject(err2); };
+                window.speechSynthesis.speak(retryUtter);
+                utteranceRef.current = retryUtter;
+                return;
+              } catch (e2) {
+                console.error('Retry speak threw:', e2);
+              }
+            }
+            reject(e);
+          };
+
+          window.speechSynthesis.speak(u);
+        } catch (err) {
+          console.error('speakChunk exception', err);
+          reject(err);
+        }
+      });
     };
 
-    utteranceRef.current = utterance;
     
-    // Llamar a speak SIN setTimeout, ya que el setTimeout pierde el contexto de "Gesto del Usuario",
-    // y muchos navegadores bloquean la reproducción de audio sintético si no sucede síncronamente al clic.
-    window.speechSynthesis.speak(utterance);
+
+    // Ejecutar los chunks: hablar el primer chunk sincrónicamente (preserva gesto de usuario)
+    if (!chunks || chunks.length === 0) {
+      setPlayState('idle');
+      setActiveCharIndex(-1);
+      return;
+    }
+
+    const queue = chunks.slice();
+    let stopped = false;
+
+    const finishAll = () => {
+      stopped = true;
+      utteranceRef.current = null;
+      setPlayState('idle');
+      setActiveCharIndex(-1);
+    };
+
+    const speakNextSync = (attempt = 0) => {
+      if (stopped) return;
+      if (queue.length === 0) { finishAll(); return; }
+      const chunk = queue.shift();
+      try {
+        const u = new SpeechSynthesisUtterance(chunk);
+        u.rate = speedRef.current;
+        u.lang = 'es-ES';
+        const voice = selectVoice();
+        if (voice) u.voice = voice;
+
+        u.onboundary = (e) => {
+          if (e && typeof e.charIndex === 'number') {
+            setActiveCharIndex(offsetIndex + cumulativeOffset + e.charIndex);
+          }
+        };
+
+        u.onstart = () => {
+          utteranceRef.current = u;
+          setPlayState('playing');
+        };
+
+        u.onend = async () => {
+          if (utteranceRef.current !== u) return;
+          utteranceRef.current = null;
+          cumulativeOffset += chunk.length;
+          // Si quedan chunks, hablar el siguiente (esto ocurre desde evento onend, por lo que está permitido)
+          if (queue.length > 0) {
+            speakNextSync(0);
+            return;
+          }
+          finishAll();
+        };
+
+        u.onerror = async (e) => {
+          console.error('SpeechSynthesis chunk error (sync):', e, { chunkLen: chunk.length, attempt });
+          utteranceRef.current = null;
+          setLastTTSError(e && e.error ? e.error : (e && e.message) || 'synthesis-failed');
+          // Intentar reintento simple con la misma chunk sin voice
+          if (attempt === 0) {
+            try {
+              const retry = new SpeechSynthesisUtterance(chunk);
+              retry.rate = speedRef.current;
+              retry.lang = 'es-ES';
+              retry.onend = () => { cumulativeOffset += chunk.length; if (queue.length > 0) speakNextSync(0); else finishAll(); };
+              retry.onerror = (err2) => { console.error('Retry failed (sync):', err2); };
+              window.speechSynthesis.speak(retry);
+              utteranceRef.current = retry;
+              return;
+            } catch (e2) {
+              console.error('Retry speak threw (sync):', e2);
+            }
+          }
+
+          // Si falla, intentar fallback en este orden: ElevenLabs -> Backend TTS -> terminar
+          const remaining = sliceBuffer.substring(cumulativeOffset);
+          if (elevenLabsKey) {
+            try {
+              await generateAIAndPlay(remaining);
+              return;
+            } catch (aiErr) {
+              console.error('AI fallback also failed (sync):', aiErr);
+              setLastTTSError(aiErr && aiErr.message ? aiErr.message : 'AI fallback failed');
+            }
+          }
+
+          // Intentar backend local
+          try {
+            await generateBackendAndPlay(remaining);
+            return;
+          } catch (beErr) {
+            console.error('Backend fallback also failed (sync):', beErr);
+            setLastTTSError(beErr && beErr.message ? beErr.message : 'Backend fallback failed');
+          }
+
+          finishAll();
+        };
+
+        // Llamada sincrónica en el mismo stack del click para preservar permiso de usuario
+        window.speechSynthesis.speak(u);
+      } catch (err) {
+        console.error('speakNextSync exception', err);
+        finishAll();
+      }
+    };
+
+    // Iniciar la cadena (primera llamada ocurre sincrónicamente)
+    speakNextSync(0);
   };
 
   const handleTogglePlay = () => {
+    console.debug('handleTogglePlay clicked, playState=', playState);
     if (playState === 'playing') {
       if (audioRef.current && !audioRef.current.paused) {
          audioRef.current.pause();
@@ -364,6 +650,15 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
       {/* Editor / Karaoke View */}
       <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        {/* Nota de compatibilidad */}
+        <div style={{
+          padding: '10px 16px', marginBottom: '10px', borderRadius: '12px',
+          background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)',
+          border: '1px solid rgba(148,163,184,0.2)', fontSize: '13px'
+        }}>
+          Compatible con <strong>Microsoft Edge</strong> y <strong>Brave</strong>. Chrome aún no es totalmente compatible.
+        </div>
+
         {/* TTS Advance Controls */}
         <div style={{ 
           display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--surface2)', 
@@ -422,6 +717,38 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             <Sparkles size={14} /> Voz IA
           </button>
 
+          <button
+            type="button"
+            onClick={() => setShowDiagnostics(!showDiagnostics)}
+            style={{ ...btnBase, background: showDiagnostics ? 'var(--surface2)' : 'transparent', color: 'var(--text)' }}
+          >
+            <Settings size={14} /> Diagnóstico
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              if (!text.trim()) return;
+              if (!elevenLabsKey) return alert('Agrega tu API Key de ElevenLabs en Configuración IA');
+              setAiLoading(true);
+              try { await (async () => {
+                const hashKey = await generateHash(text);
+                const cached = await getTTSAudio(hashKey);
+                if (cached) {
+                  const url = URL.createObjectURL(cached.audioBlob);
+                  const a = new Audio(url); a.playbackRate = speedRef.current; audioRef.current = a; await a.play();
+                } else {
+                  await generateAIAndPlay(text);
+                }
+              })();
+              } catch (e) { console.error('Force AI failed', e); alert('Falló generación IA'); }
+              finally { setAiLoading(false); }
+            }}
+            style={{ ...btnBase, background: 'transparent', color: 'var(--text-muted)' }}
+          >
+            <Play size={14} /> Forzar IA
+          </button>
+
           <button 
             type="button"
             onClick={handleDownloadAudio}
@@ -468,6 +795,28 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
                 />
                 Activar Voz IA
               </label>
+            </div>
+          </div>
+        )}
+
+        {/* Panel de Diagnóstico */}
+        {showDiagnostics && (
+          <div style={{
+            background: '#111827', color: '#e5e7eb', border: '1px solid #374151', borderRadius: '8px',
+            padding: '12px', marginTop: '12px', fontSize: '13px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Diagnóstico TTS</strong>
+              <small style={{ opacity: 0.8 }}>{voicesCount} voces detectadas</small>
+            </div>
+            <div style={{ marginTop: '8px' }}>
+              <div><strong>Último error:</strong> <span style={{ color: 'salmon' }}>{lastTTSError || '—'}</span></div>
+              <details style={{ marginTop: '8px' }}>
+                <summary style={{ cursor: 'pointer' }}>Lista de voces</summary>
+                <ul style={{ margin: '8px 0 0 16px' }}>
+                  {voicesList.length ? voicesList.map((v, i) => <li key={i}>{v}</li>) : <li>No hay voces</li>}
+                </ul>
+              </details>
             </div>
           </div>
         )}
