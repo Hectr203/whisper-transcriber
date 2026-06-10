@@ -352,12 +352,64 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       {/* Header */}
       {initialMetadata && (
         <div style={{
-          padding: '16px 20px', borderBottom: '1px solid var(--border)', background: 'var(--surface2)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--surface2)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <CheckCircle size={18} />
             <span style={{ fontWeight: 600, color: 'var(--success)' }}>Transcripción lista</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={handleCopy}
+              style={{
+                ...btnBase,
+                background: copied ? 'rgba(74, 222, 128, 0.1)' : 'var(--accent-light)',
+                borderColor: copied ? 'var(--success)' : 'var(--accent)',
+                color: copied ? 'var(--success)' : 'var(--accent)',
+              }}
+            >
+              {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar transcripción</>}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadTxt}
+              style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
+            >
+              <FileText size={14} /> Descargar .txt
+            </button>
+
+            {showReset && onReset && (
+              <button
+                type="button"
+                onClick={onReset}
+                style={{
+                  ...btnBase,
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  borderColor: 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--text)';
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                  e.currentTarget.style.borderColor = 'transparent';
+                }}
+              >
+                <RotateCcw size={14} /> Nueva transcripción
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -505,34 +557,65 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         )}
       </div>
 
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface)' }}>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={handleCopy}
-            style={{
-              ...btnBase, background: copied ? 'rgba(74, 222, 128, 0.1)' : 'var(--accent-light)',
-              borderColor: copied ? 'var(--success)' : 'var(--accent)', color: copied ? 'var(--success)' : 'var(--accent)'
-            }}
-          >
-            {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar transcripción</>}
-          </button>
-          
-          <button
-            type="button"
-            onClick={handleDownloadTxt}
-            style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
-          >
-            <FileText size={14} /> Descargar .txt
-          </button>
-        </div>
+      {!initialMetadata && (
+        <div style={{
+          padding: '16px 20px',
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          gap: '10px',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'var(--surface)',
+        }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleCopy}
+              style={{
+                ...btnBase,
+                background: copied ? 'rgba(74, 222, 128, 0.1)' : 'var(--accent-light)',
+                borderColor: copied ? 'var(--success)' : 'var(--accent)',
+                color: copied ? 'var(--success)' : 'var(--accent)',
+              }}
+            >
+              {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar transcripción</>}
+            </button>
 
-        {showReset && onReset && (
-          <button type="button" onClick={onReset} style={{...btnBase, background: 'transparent', color: 'var(--text-muted)', borderColor: 'transparent'}}>
-            <RotateCcw size={14} /> Nueva transcripción
-          </button>
-        )}
-      </div>
+            <button
+              type="button"
+              onClick={handleDownloadTxt}
+              style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
+            >
+              <FileText size={14} /> Descargar .txt
+            </button>
+          </div>
+
+          {showReset && onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              style={{
+                ...btnBase,
+                background: 'transparent',
+                color: 'var(--text-muted)',
+                borderColor: 'transparent',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = 'var(--text)';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.style.borderColor = 'transparent';
+              }}
+            >
+              <RotateCcw size={14} /> Nueva transcripción
+            </button>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
