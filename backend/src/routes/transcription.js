@@ -3,7 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { upload } = require('../middleware/uploadMiddleware');
-const { splitAudio, cleanupChunks } = require('../services/audioSplitter');
+const { splitAudio, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
 const { transcribeChunks } = require('../services/whisperService');
 
 // Map para gestionar conexiones SSE activas
@@ -41,8 +41,16 @@ router.post('/upload', (req, res, next) => {
       }
     };
 
-    const cleanup = (filePath, chunkPaths = []) => {
-      cleanupChunks(chunkPaths, filePath);
+    const cleanup = (filePath, chunkPaths = [], extractedAudioPath = null) => {
+      cleanupChunks(chunkPaths, extractedAudioPath || filePath);
+      // Eliminar el archivo de audio extraído temporal si existe
+      try {
+        if (extractedAudioPath && fs.existsSync(extractedAudioPath)) fs.unlinkSync(extractedAudioPath);
+      } catch (_) {}
+      // Eliminar el archivo original subido
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (_) {}
       // Eliminar el archivo original subido
       try {
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -80,30 +88,46 @@ router.post('/upload', (req, res, next) => {
 
 async function processTranscription({ filePath, originalName, fileSize, jobId, sendEvent, cleanup, getJob }) {
   let chunkPaths = [];
+  let audioToProcess = filePath;
+  let isVideo = false;
+  let originalDuration = 0;
 
   try {
     sendEvent('status', {
       stage: 'analyzing',
-      message: 'Analizando archivo de audio...',
+      message: 'Analizando archivo multimedia...',
       progress: 5,
     });
 
-    const fileSizeMB = fileSize / (1024 * 1024);
-    console.log(`[Process] Iniciando: ${originalName} (${fileSizeMB.toFixed(1)}MB)`);
+    const mediaInfo = await analyzeMedia(filePath);
+    isVideo = mediaInfo.hasVideo;
+    originalDuration = mediaInfo.duration;
+
+    if (isVideo) {
+      sendEvent('status', {
+        stage: 'extracting',
+        message: 'Extrayendo audio del video...',
+        progress: 8,
+      });
+      audioToProcess = await extractAudioIfVideo(filePath);
+    }
+
+    const actualFileSizeMB = fs.statSync(audioToProcess).size / (1024 * 1024);
+    console.log(`[Process] Iniciando: ${originalName} (Original: ${(fileSize / (1024*1024)).toFixed(1)}MB, A procesar: ${actualFileSizeMB.toFixed(1)}MB)`);
 
     // Verificar cancelación
     if (getJob()?.cancelled) throw new Error('Trabajo cancelado por el cliente');
 
     sendEvent('status', {
       stage: 'splitting',
-      message: fileSizeMB > 24
-        ? `Archivo grande (${fileSizeMB.toFixed(0)}MB), dividiendo en segmentos...`
+      message: actualFileSizeMB > 24
+        ? `Audio grande (${actualFileSizeMB.toFixed(0)}MB), dividiendo en segmentos...`
         : 'Preparando transcripción...',
       progress: 10,
     });
 
     // Dividir si es necesario
-    chunkPaths = await splitAudio(filePath, (current, total, stage) => {
+    chunkPaths = await splitAudio(audioToProcess, (current, total, stage) => {
       if (getJob()?.cancelled) return;
       sendEvent('status', {
         stage: 'splitting',
@@ -155,13 +179,15 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, s
       charCount: transcription.length,
       wordCount: transcription.split(/\s+/).filter(w => w.length > 0).length,
       fileName: originalName,
-      fileSizeMB: parseFloat(fileSizeMB.toFixed(2)),
+      fileSizeMB: parseFloat((fileSize / (1024*1024)).toFixed(2)),
+      fileType: isVideo ? 'video' : 'audio',
+      duration: originalDuration,
     });
 
     console.log(`[Process] Completado: ${transcription.length} caracteres`);
 
   } finally {
-    cleanup(filePath, chunkPaths);
+    cleanup(filePath, chunkPaths, audioToProcess !== filePath ? audioToProcess : null);
     const { res } = activeJobs.get(jobId) || {};
     if (res && !res.writableEnded) res.end();
   }

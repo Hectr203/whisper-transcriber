@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Volume2, Music, AlertTriangle, X, Download, Moon, Sun, History as HistoryIcon } from 'lucide-react';
+import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, History as HistoryIcon } from 'lucide-react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
@@ -13,6 +13,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('stt'); // 'stt' | 'tts'
   
   const [file, setFile] = useState(null);
+  const [fileInfo, setFileInfo] = useState(null);
   const [status, setStatus] = useState(null);  // { stage, message, progress, ... }
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -45,6 +46,7 @@ export default function App() {
 
   const reset = useCallback(() => {
     setFile(null);
+    setFileInfo(null);
     setStatus(null);
     setResult(null);
     setError(null);
@@ -59,6 +61,28 @@ export default function App() {
     setResult(null);
     setStatus(null);
     setCurrentHistoryId(null); // New file, new history tracking
+    setFileInfo(null); // Reset file info while loading
+
+    // Extract media info
+    const isVideo = selectedFile.type.startsWith('video') || ['.mp4', '.webm', '.mov', '.avi', '.mkv'].some(ext => selectedFile.name.toLowerCase().endsWith(ext));
+    const mediaEl = document.createElement(isVideo ? 'video' : 'audio');
+    const objectUrl = URL.createObjectURL(selectedFile);
+    
+    mediaEl.onloadedmetadata = () => {
+      const minutes = Math.floor(mediaEl.duration / 60);
+      const seconds = Math.floor(mediaEl.duration % 60);
+      setFileInfo({
+        type: isVideo ? 'video' : 'audio',
+        durationText: `${minutes}:${seconds.toString().padStart(2, '0')}`,
+        durationSec: mediaEl.duration
+      });
+      URL.revokeObjectURL(objectUrl);
+    };
+    mediaEl.onerror = () => {
+      setFileInfo({ type: isVideo ? 'video' : 'audio', durationText: '--:--', durationSec: 0 });
+      URL.revokeObjectURL(objectUrl);
+    };
+    mediaEl.src = objectUrl;
   }, []);
 
   const handleDownloadAudio = useCallback(() => {
@@ -328,14 +352,16 @@ export default function App() {
               flexWrap: 'wrap',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Music size={20} />
+                {fileInfo?.type === 'video' ? <Film size={20} /> : <Music size={20} />}
                 <div>
-                  <p style={{ fontWeight: 500, fontSize: '14px', margin: 0 }}>{file.name}</p>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0 }}>
-                    {fileSizeMB} MB
+                  <p style={{ fontWeight: 500, fontSize: '14px', margin: 0 }}>
+                    {fileInfo?.type === 'video' ? 'Video:' : 'Audio:'} {file.name}
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: 0, marginTop: '2px' }}>
+                    {fileInfo ? `Duración: ${fileInfo.durationText} | ` : ''}{fileSizeMB} MB
                     {isLargeFile && (
                       <span style={{ marginLeft: '8px', color: 'var(--warning)' }}>
-                        — Se dividirá automáticamente en segmentos
+                        — Se dividirá automáticamente
                       </span>
                     )}
                   </p>
@@ -361,7 +387,7 @@ export default function App() {
                   title="Descargar audio"
                 ><Download size={18} /></button>
                 <button
-                  onClick={() => { setFile(null); setError(null); setCurrentHistoryId(null); }}
+                  onClick={() => { setFile(null); setFileInfo(null); setError(null); setCurrentHistoryId(null); }}
                   style={{
                     background: 'none',
                     border: 'none',

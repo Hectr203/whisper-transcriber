@@ -16,11 +16,14 @@ const ALLOWED_MIME_TYPES = [
   'audio/flac',
   'audio/x-flac',
   'audio/webm',
-  'video/mp4',   // algunos m4a se detectan como video/mp4
+  'video/mp4',
   'video/webm',
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-matroska'
 ];
 
-const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac'];
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv'];
 
 const MAX_SIZE_BYTES = parseInt(process.env.MAX_FILE_SIZE_MB || '1024') * 1024 * 1024;
 

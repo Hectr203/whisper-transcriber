@@ -1,9 +1,9 @@
 import React, { useRef, useState, useCallback } from 'react';
-import { AlertTriangle, Mic } from 'lucide-react';
+import { AlertTriangle, Mic, Film } from 'lucide-react';
 
 const ALLOWED_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
-  'audio/ogg', 'audio/flac', 'audio/webm', 'video/mp4', 'video/webm'];
-const ALLOWED_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac'];
+  'audio/ogg', 'audio/flac', 'audio/webm', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
+const ALLOWED_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv'];
 const MAX_SIZE_GB = 1;
 
 export default function UploadZone({ onFileSelected, disabled }) {
@@ -81,10 +81,13 @@ export default function UploadZone({ onFileSelected, disabled }) {
           disabled={disabled}
         />
 
-        <div style={{ marginBottom: '16px' }}><Mic size={48} /></div>
+        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
+          <Mic size={48} />
+          <Film size={48} style={{ opacity: 0.7 }} />
+        </div>
 
         <p style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
-          {dragOver ? 'Suelta el archivo aquí' : 'Arrastra tu archivo de audio'}
+          {dragOver ? 'Suelta el archivo aquí' : 'Arrastra tu archivo de audio o video'}
         </p>
 
         <p style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '14px' }}>
@@ -98,7 +101,7 @@ export default function UploadZone({ onFileSelected, disabled }) {
           flexWrap: 'wrap',
           marginBottom: '16px',
         }}>
-          {['MP3', 'WAV', 'M4A', 'OGG', 'FLAC', 'WebM'].map(fmt => (
+          {['MP3', 'WAV', 'M4A', 'MP4', 'WEBM', 'MOV', 'AVI', 'MKV'].map(fmt => (
             <span key={fmt} style={{
               background: 'var(--surface2)',
               border: '1px solid var(--border)',

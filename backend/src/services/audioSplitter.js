@@ -9,16 +9,62 @@ const CHUNK_DURATION_SECONDS = 600; // 10 minutos por chunk (seguro para la mayo
 const tempDir = path.resolve(process.env.TEMP_DIR || './src/temp');
 
 /**
- * Obtiene la duración de un archivo de audio en segundos
+ * Obtiene la duración y si tiene video
  */
-function getAudioDuration(filePath) {
+function analyzeMedia(filePath) {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err) return reject(new Error(`No se pudo analizar el archivo de audio: ${err.message}`));
+      if (err) return reject(new Error(`No se pudo analizar el archivo: ${err.message}`));
       const duration = metadata.format?.duration;
       if (!duration) return reject(new Error('No se pudo determinar la duración del archivo'));
-      resolve(parseFloat(duration));
+      
+      const hasVideo = metadata.streams.some(s => s.codec_type === 'video');
+      resolve({ duration: parseFloat(duration), hasVideo });
     });
+  });
+}
+
+/**
+ * Obtiene la duración de un archivo de audio en segundos (mantiene compatibilidad)
+ */
+async function getAudioDuration(filePath) {
+  const { duration } = await analyzeMedia(filePath);
+  return duration;
+}
+
+/**
+ * Extrae audio de un video, o devuelve la misma ruta si ya es audio.
+ */
+async function extractAudioIfVideo(inputPath, onProgress = () => {}) {
+  const { hasVideo } = await analyzeMedia(inputPath);
+  
+  if (!hasVideo) {
+    console.log(`[Media] El archivo no tiene video, o ya es audio.`);
+    return inputPath;
+  }
+
+  console.log(`[Media] Video detectado. Extrayendo pista de audio...`);
+  const sessionId = uuidv4();
+  const outputPath = path.join(tempDir, `extracted_${sessionId}.mp3`);
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .noVideo()
+      .audioCodec('libmp3lame')
+      .audioBitrate('64k') // 64kbps para voz, igual que splitAudio
+      .format('mp3')
+      .on('progress', (progress) => {
+        // progress.percent a veces es indefinido, enviamos evento genérico
+        onProgress(progress);
+      })
+      .on('end', () => {
+        console.log(`[Media] Audio extraído con éxito: ${outputPath}`);
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        reject(new Error(`Error al extraer audio: ${err.message}`));
+      })
+      .save(outputPath);
   });
 }
 
@@ -99,4 +145,4 @@ function cleanupChunks(chunkPaths, originalPath) {
   });
 }
 
-module.exports = { splitAudio, cleanupChunks, getAudioDuration };
+module.exports = { splitAudio, cleanupChunks, getAudioDuration, analyzeMedia, extractAudioIfVideo };
