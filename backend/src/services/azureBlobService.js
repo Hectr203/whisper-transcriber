@@ -97,6 +97,18 @@ class AzureBlobService extends AlmacenamientoInterfaz {
     }
   }
 
+  async obtenerBufferArchivo(rutaOrigen) {
+    if (!this.containerClient) throw new Error('Azure Blob Storage no está configurado.');
+    
+    const blockBlobClient = this.containerClient.getBlockBlobClient(rutaOrigen);
+    try {
+      return await blockBlobClient.downloadToBuffer();
+    } catch (error) {
+      console.error(`[AzureBlob] Error obteniendo buffer para ${rutaOrigen}:`, error.message);
+      throw error;
+    }
+  }
+
   async generarUrlTemporal(rutaOrigen, expiracionMin = 60) {
     if (!this.containerClient) throw new Error('Azure Blob Storage no está configurado.');
     

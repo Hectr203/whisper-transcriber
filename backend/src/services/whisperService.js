@@ -24,11 +24,11 @@ async function transcribeFile(chunk, options = {}) {
 
   const formData = new FormData();
   
-  // Obtenemos el ReadableStream desde Azure Blob Storage
-  const fileStream = await azureBlobService.obtenerFlujoArchivo(chunk.blob);
+  // Obtenemos el Buffer desde Azure Blob Storage
+  const fileBuffer = await azureBlobService.obtenerBufferArchivo(chunk.blob);
   
-  // FormData requiere un nombre de archivo al enviar streams
-  formData.append('file', fileStream, { 
+  // Enviamos el Buffer para que form-data pueda calcular el Content-Length exacto
+  formData.append('file', fileBuffer, { 
     filename: path.basename(chunk.blob),
     contentType: 'audio/mpeg' 
   });
