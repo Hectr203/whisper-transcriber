@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+// CORS manual sin dependencia externa
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -27,11 +27,29 @@ if (!process.env.AZURE_STORAGE_CONNECTION_STRING) {
   console.warn('⚠️  ADVERTENCIA: AZURE_STORAGE_CONNECTION_STRING no está configurada en .env. El almacenamiento de archivos fallará.');
 }
 
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Groq-Api-Key', 'X-Elevenlabs-Api-Key'],
-}));
+// Configuración de CORS manual (para evitar problemas de preflight en Azure App Service)
+const allowedOriginsString = process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = new Set(allowedOriginsString.split(',').map(s => s.trim()));
+
+app.use((req, res, next) => {
+  const origin = (req.headers.origin || "").trim().replace(/\/+$/, "");
+
+  // Si no hay origen o no está en la lista (o es localhost/dev), permitimos por defecto en este ejemplo
+  // para mayor seguridad en produccion se debe restringir estrictamente.
+  if (origin && (allowedOrigins.has(origin) || origin.startsWith('http://localhost'))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Groq-Api-Key, X-Elevenlabs-Api-Key");
+    res.setHeader("Access-Control-Max-Age", "86400"); // 24 horas
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  return next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
