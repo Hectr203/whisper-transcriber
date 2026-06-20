@@ -5,6 +5,7 @@ import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
 import TextEditorTTS from './components/TextEditorTTS';
 import HistoryPanel from './components/HistoryPanel';
+import ApiKeysConfig from './components/ApiKeysConfig';
 import { saveHistoryItem, getHistoryItems } from './utils/historyStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -22,6 +23,7 @@ export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showApiKeys, setShowApiKeys] = useState(false);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
 
   const eventSourceRef = useRef(null);
@@ -142,8 +144,15 @@ export default function App() {
 
       setStatus({ stage: 'analyzing', message: 'Conectando con el servidor...', progress: 2 });
 
+      const headers = {};
+      const groqKey = localStorage.getItem('groqApiKey');
+      if (groqKey) {
+        headers['X-Groq-Api-Key'] = groqKey;
+      }
+
       const response = await fetch(`${API_BASE}/transcription/upload`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -261,6 +270,26 @@ export default function App() {
           <HistoryIcon size={18} /> Historial
         </button>
         <button
+          onClick={() => setShowApiKeys(true)}
+          style={{
+            background: 'var(--surface2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: 500,
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'var(--surface2)'}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg> 
+          API Keys
+        </button>
+        <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           style={{
             background: 'var(--surface2)',
@@ -287,6 +316,10 @@ export default function App() {
           onLoadItem={handleLoadHistoryItem} 
           onClose={() => setShowHistory(false)} 
         />
+      )}
+
+      {showApiKeys && (
+        <ApiKeysConfig onClose={() => setShowApiKeys(false)} />
       )}
 
       {/* Tabs */}

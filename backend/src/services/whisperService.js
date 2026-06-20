@@ -3,9 +3,10 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 
-function getApiKey() {
+function getApiKey(optionsApiKey) {
+  if (optionsApiKey) return optionsApiKey;
   if (!process.env.GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY no está configurada en las variables de entorno');
+    throw new Error('No se ha proporcionado una API Key y el servidor no tiene una predeterminada configurada.');
   }
   return process.env.GROQ_API_KEY;
 }
@@ -17,7 +18,7 @@ function getApiKey() {
  * @returns {Promise<string>} - Texto transcrito
  */
 async function transcribeFile(audioPath, options = {}) {
-  const apiKey = getApiKey();
+  const apiKey = getApiKey(options.apiKey);
   const fileSizeMB = fs.statSync(audioPath).size / (1024 * 1024);
 
   console.log(`[Whisper] Transcribiendo: ${path.basename(audioPath)} (${fileSizeMB.toFixed(1)}MB)`);

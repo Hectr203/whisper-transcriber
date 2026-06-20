@@ -9,6 +9,14 @@ const ttsRoutes = require('./routes/tts');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Validar entorno
+if (!process.env.GROQ_API_KEY) {
+  console.warn('⚠️  ADVERTENCIA: GROQ_API_KEY no está configurada en .env. El sistema requerirá que el cliente envíe su propia API Key.');
+}
+if (!process.env.ELEVENLABS_API_KEY) {
+  console.warn('⚠️  ADVERTENCIA: ELEVENLABS_API_KEY no está configurada en .env. El TTS con ElevenLabs requerirá que el cliente envíe su propia API Key.');
+}
+
 // Asegurar que los directorios temporales existan
 const tempDir = path.resolve(process.env.TEMP_DIR || './src/temp');
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || './src/uploads');
@@ -17,7 +25,7 @@ const uploadsDir = path.resolve(process.env.UPLOADS_DIR || './src/uploads');
 });
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || 'http://localhost:5175',
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
