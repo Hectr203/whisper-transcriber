@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { upload } = require('../middleware/uploadMiddleware');
 const { splitAudio, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
 const { transcribeChunks } = require('../services/whisperService');
+const azureBlobService = require('../services/azureBlobService');
 
 // Map para gestionar conexiones SSE activas
 const activeJobs = new Map();
@@ -15,7 +17,7 @@ const activeJobs = new Map();
  */
 router.post('/upload', (req, res, next) => {
   // Multer con manejo de errores explícito
-  upload.single('audio')(req, res, (err) => {
+  upload.single('audio')(req, res, async (err) => {
     if (err) return next(err);
 
     if (!req.file) {
@@ -32,7 +34,7 @@ router.post('/upload', (req, res, next) => {
     res.setHeader('X-Accel-Buffering', 'no'); // Deshabilitar buffer en nginx
     res.flushHeaders();
 
-    const jobId = req.file.filename;
+    const jobId = req.file.filename.replace('upload_', '').split('.')[0]; // Usamos el UUID
     activeJobs.set(jobId, { res, cancelled: false });
 
     const sendEvent = (event, data) => {
@@ -41,42 +43,62 @@ router.post('/upload', (req, res, next) => {
       }
     };
 
-    const cleanup = (filePath, chunkPaths = [], extractedAudioPath = null) => {
-      cleanupChunks(chunkPaths, extractedAudioPath || filePath);
-      // Eliminar el archivo de audio extraído temporal si existe
+    const cleanupLocal = (filePath) => {
       try {
-        if (extractedAudioPath && fs.existsSync(extractedAudioPath)) fs.unlinkSync(extractedAudioPath);
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
       } catch (_) {}
-      // Eliminar el archivo original subido
-      try {
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      } catch (_) {}
-      // Eliminar el archivo original subido
-      try {
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      } catch (_) {}
-      activeJobs.delete(jobId);
     };
 
-    // Procesar en background para no bloquear
-    processTranscription({
-      filePath: req.file.path,
-      originalName: req.file.originalname,
-      fileSize: req.file.size,
-      jobId,
-      apiKey: req.headers['x-groq-api-key'], // <- Leer API Key del cliente
-      sendEvent,
-      cleanup,
-      getJob: () => activeJobs.get(jobId),
-    }).catch((error) => {
-      console.error('[Route] Error en transcripción:', error.message);
-      sendEvent('error', {
-        message: formatErrorMessage(error),
-        code: error.code || 'TRANSCRIPTION_ERROR',
+    let originalBlobPath = '';
+
+    try {
+      sendEvent('status', {
+        stage: 'uploading',
+        message: 'Subiendo archivo a almacenamiento seguro...',
+        progress: 2,
       });
-      cleanup(req.file.path);
+
+      // 1. Subir archivo original a Azure Blob Storage
+      originalBlobPath = `cargas/${jobId}/${req.file.originalname}`;
+      await azureBlobService.subirArchivo(req.file.path, originalBlobPath, {
+        mimetype: req.file.mimetype,
+        jobId: jobId
+      });
+
+      // Procesar en background para no bloquear
+      processTranscription({
+        localFilePath: req.file.path,
+        originalBlobPath,
+        originalName: req.file.originalname,
+        fileSize: req.file.size,
+        jobId,
+        apiKey: req.headers['x-groq-api-key'], // <- Leer API Key del cliente
+        sendEvent,
+        cleanupLocal,
+        getJob: () => activeJobs.get(jobId),
+      }).catch(async (error) => {
+        console.error('[Route] Error en transcripción:', error.message);
+        sendEvent('error', {
+          message: formatErrorMessage(error),
+          code: error.code || 'TRANSCRIPTION_ERROR',
+        });
+        cleanupLocal(req.file.path);
+        await azureBlobService.eliminarPorPrefijo(`cargas/${jobId}/`).catch(()=>{});
+        await azureBlobService.eliminarPorPrefijo(`temporales/${jobId}/`).catch(()=>{});
+        activeJobs.delete(jobId);
+        if (!res.writableEnded) res.end();
+      });
+
+    } catch (azureError) {
+      console.error('[Route] Error subiendo a Azure:', azureError);
+      sendEvent('error', {
+        message: 'Error al subir el archivo al almacenamiento seguro.',
+        code: 'STORAGE_ERROR'
+      });
+      cleanupLocal(req.file.path);
+      activeJobs.delete(jobId);
       if (!res.writableEnded) res.end();
-    });
+    }
 
     // Detectar desconexión del cliente
     req.on('close', () => {
@@ -87,9 +109,9 @@ router.post('/upload', (req, res, next) => {
   });
 });
 
-async function processTranscription({ filePath, originalName, fileSize, jobId, apiKey, sendEvent, cleanup, getJob }) {
+async function processTranscription({ localFilePath, originalBlobPath, originalName, fileSize, jobId, apiKey, sendEvent, cleanupLocal, getJob }) {
   let chunkPaths = [];
-  let audioToProcess = filePath;
+  let audioToProcessLocal = localFilePath;
   let isVideo = false;
   let originalDuration = 0;
 
@@ -100,7 +122,8 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, a
       progress: 5,
     });
 
-    const mediaInfo = await analyzeMedia(filePath);
+    // Analizamos el archivo localmente (ffmpeg necesita un archivo local)
+    const mediaInfo = await analyzeMedia(localFilePath);
     isVideo = mediaInfo.hasVideo;
     originalDuration = mediaInfo.duration;
 
@@ -110,10 +133,14 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, a
         message: 'Extrayendo audio del video...',
         progress: 8,
       });
-      audioToProcess = await extractAudioIfVideo(filePath);
+      audioToProcessLocal = await extractAudioIfVideo(localFilePath);
+      
+      // Subir el audio extraído a Blob Storage
+      const extractedBlobPath = `temporales/${jobId}/audio_extraido.mp3`;
+      await azureBlobService.subirArchivo(audioToProcessLocal, extractedBlobPath, { jobId });
     }
 
-    const actualFileSizeMB = fs.statSync(audioToProcess).size / (1024 * 1024);
+    const actualFileSizeMB = fs.statSync(audioToProcessLocal).size / (1024 * 1024);
     console.log(`[Process] Iniciando: ${originalName} (Original: ${(fileSize / (1024*1024)).toFixed(1)}MB, A procesar: ${actualFileSizeMB.toFixed(1)}MB)`);
 
     // Verificar cancelación
@@ -127,8 +154,8 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, a
       progress: 10,
     });
 
-    // Dividir si es necesario
-    chunkPaths = await splitAudio(audioToProcess, (current, total, stage) => {
+    // Dividir si es necesario localmente (ffmpeg)
+    chunkPaths = await splitAudio(audioToProcessLocal, (current, total, stage) => {
       if (getJob()?.cancelled) return;
       sendEvent('status', {
         stage: 'splitting',
@@ -141,6 +168,15 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, a
 
     if (getJob()?.cancelled) throw new Error('Trabajo cancelado por el cliente');
 
+    // Subir chunks locales a Azure Blob Storage
+    const chunkBlobPaths = [];
+    for (let i = 0; i < chunkPaths.length; i++) {
+      const chunkLocalPath = chunkPaths[i];
+      const chunkBlobPath = `temporales/${jobId}/chunk_${i}.mp3`;
+      await azureBlobService.subirArchivo(chunkLocalPath, chunkBlobPath, { jobId });
+      chunkBlobPaths.push({ local: chunkLocalPath, blob: chunkBlobPath });
+    }
+
     const totalChunks = chunkPaths.length;
     sendEvent('status', {
       stage: 'transcribing',
@@ -151,9 +187,12 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, a
       totalChunks,
     });
 
-    // Transcribir
+    // Transcribir (le pasamos las rutas de Blob, descargará cada una a memoria para enviarlo a Groq)
+    // Pero espera, el WhisperService actual acepta rutas locales.
+    // Lo más eficiente es que lea el Blob y lo envie como Stream.
+    // Modificaremos whisperService para que soporte Blob Paths
     const transcription = await transcribeChunks(
-      chunkPaths,
+      chunkBlobPaths,
       (current, total) => {
         if (getJob()?.cancelled) return;
         const progressValue = Math.round(30 + (current / total) * 65);
@@ -189,9 +228,24 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, a
     console.log(`[Process] Completado: ${transcription.length} caracteres`);
 
   } finally {
-    cleanup(filePath, chunkPaths, audioToProcess !== filePath ? audioToProcess : null);
+    // 1. Limpiar todos los archivos locales usados en el proceso
+    cleanupLocal(localFilePath);
+    if (audioToProcessLocal !== localFilePath) cleanupLocal(audioToProcessLocal);
+    cleanupChunks(chunkPaths, audioToProcessLocal !== localFilePath ? audioToProcessLocal : null);
+    
+    // 2. Eliminar blobs generados en Azure Blob Storage (limpieza segura)
+    console.log(`[Process] Limpiando blobs de Azure para el job ${jobId}...`);
+    try {
+      await azureBlobService.eliminarPorPrefijo(`cargas/${jobId}/`);
+      await azureBlobService.eliminarPorPrefijo(`temporales/${jobId}/`);
+    } catch (e) {
+      console.warn(`[Process] Fallo parcial en limpieza de Azure Blob:`, e.message);
+    }
+
+    // 3. Cerrar SSE
     const { res } = activeJobs.get(jobId) || {};
     if (res && !res.writableEnded) res.end();
+    activeJobs.delete(jobId);
   }
 }
 
