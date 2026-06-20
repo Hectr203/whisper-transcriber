@@ -34,19 +34,43 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
   const [isDownloading, setIsDownloading] = useState(false);
   
   const speedRef = useRef(1);
+  const isPausedRef = useRef(false);
   const [activeCharIndex, setActiveCharIndex] = useState(-1);
   const utteranceRef = useRef(null);
   const audioRef = useRef(null);
 
-  // AI TTS State
-  const [elevenLabsKey, setElevenLabsKey] = useState(() => localStorage.getItem('elevenLabsKey') || '');
+  const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [useAITTS, setUseAITTS] = useState(() => localStorage.getItem('useAITTS') === 'true');
   const [aiLoading, setAiLoading] = useState(false);
   const [showAIConfig, setShowAIConfig] = useState(false);
 
   const activeWordRef = useRef(null);
 
-  useEffect(() => { localStorage.setItem('elevenLabsKey', elevenLabsKey); }, [elevenLabsKey]);
+  // Voces nativas del navegador
+  const [nativeVoices, setNativeVoices] = useState([]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      if (window.speechSynthesis) {
+        const availableVoices = window.speechSynthesis.getVoices();
+        if (availableVoices.length > 0) {
+          setNativeVoices(availableVoices);
+        }
+      }
+    };
+
+    loadVoices();
+    if (window.speechSynthesis && window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
+  useEffect(() => {
+    // Escuchar cambios locales si se actualiza la configuración general
+    const key = localStorage.getItem('elevenLabsApiKey') || '';
+    setElevenLabsKey(key);
+  }, []);
+
   useEffect(() => { localStorage.setItem('useAITTS', useAITTS); }, [useAITTS]);
 
   // Stop synthesis when component unmounts
@@ -112,6 +136,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
        audioRef.current.currentTime = 0;
     }
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    isPausedRef.current = false;
 
     const sliceBuffer = text.substring(offsetIndex);
     if (!sliceBuffer.trim()) {
@@ -120,8 +145,8 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       return;
     }
 
-    // AI TTS Logic
-    if (useAITTS && elevenLabsKey) {
+    // AI TTS / Cloud TTS Logic
+    if (useAITTS) {
       setPlayState('playing');
       setAiLoading(true);
       setActiveCharIndex(offsetIndex); // We won't get word boundaries with free AI easily, just start highlighting from offset
@@ -135,34 +160,52 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         if (cached) {
           audioBlob = cached.audioBlob;
         } else {
-          const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJcg`, { // Voice: Fin
-            method: 'POST',
-            headers: {
-              'Accept': 'audio/mpeg',
-              'Content-Type': 'application/json',
-              'xi-api-key': elevenLabsKey
-            },
-            body: JSON.stringify({
-              text: sliceBuffer,
-              model_id: 'eleven_multilingual_v2',
-              voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-            })
-          });
+          // Leer la clave más actualizada del localStorage
+          const localKey = localStorage.getItem('elevenLabsApiKey');
+          const headers = { 'Content-Type': 'application/json' };
+          
+          if (localKey) {
+             headers['X-Elevenlabs-Api-Key'] = localKey;
+             const res = await fetch(`${API_BASE}/tts/elevenlabs`, {
+               method: 'POST',
+               headers,
+               body: JSON.stringify({ text: sliceBuffer })
+             });
 
-          if (!res.ok) {
-            console.warn('ElevenLabs API Error, cayendo a TTS nativo');
-            throw new Error('ElevenLabs failed');
+             if (!res.ok) {
+               console.warn('ElevenLabs Backend Error, cayendo a TTS nativo');
+               throw new Error('ElevenLabs API failed');
+             }
+             audioBlob = await res.blob();
+          } else {
+             // Fallback a Cloud TTS gratuito (soluciona el balbuceo en Chrome a altas velocidades)
+             const res = await fetch(`${API_BASE}/tts/generate`, {
+               method: 'POST',
+               headers,
+               body: JSON.stringify({ text: sliceBuffer, lang: 'es', speed: 1 })
+             });
+
+             if (!res.ok) throw new Error('Cloud TTS API failed');
+             audioBlob = await res.blob();
           }
 
-          audioBlob = await res.blob();
           await saveTTSAudio(hashKey, audioBlob); // Cachéamos el audio
         }
 
         const url = URL.createObjectURL(audioBlob);
         const audio = new Audio(url);
+        audio.preservesPitch = true; // Asegurar que no suene como ardilla a velocidades altas
         audio.playbackRate = speedRef.current;
         audioRef.current = audio;
         
+        audio.ontimeupdate = () => {
+          if (audio.duration) {
+             const progress = audio.currentTime / audio.duration;
+             const estimatedCharIndex = Math.floor(sliceBuffer.length * progress);
+             setActiveCharIndex(offsetIndex + estimatedCharIndex);
+          }
+        };
+
         audio.onended = () => {
           setPlayState('idle');
           setActiveCharIndex(-1);
@@ -179,8 +222,11 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     }
 
     // Fallback TTS Nativo
-    if (!window.speechSynthesis) {
-      return alert("Tu navegador no soporta TTS nativo.");
+    if (!window.speechSynthesis || (window.speechSynthesis.getVoices().length === 0 && nativeVoices.length === 0)) {
+      alert("Tu navegador (ej. Brave) parece estar bloqueando las voces nativas. Por favor, marca la casilla 'Usar Voz Nube' para reproducir el audio, o verifica los escudos de privacidad.");
+      setPlayState('idle');
+      setActiveCharIndex(-1);
+      return;
     }
 
     // Siempre cancelar y forzar 'resume' para destrabar colas buggeadas
@@ -191,13 +237,34 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     setPlayState('playing'); // Cambiar estado inmediatamente para feedback visual
 
     const utterance = new SpeechSynthesisUtterance(sliceBuffer);
-    utterance.rate = speedRef.current;
+    
+    // Detección de Microsoft Edge
+    const isEdge = window.navigator.userAgent.indexOf("Edg/") > -1;
+
+    // Adaptación global de velocidad para TTS nativo (Chrome, Brave, etc.)
+    // Los motores nativos tienden a balbucear y distorsionarse a rates muy altos.
+    // Suavizamos MUCHO la curva: si en la UI pide 2.0, al motor nativo le enviamos 1.25.
+    // IMPORTANTE: En Edge no aplicamos esta reducción porque sus voces nativas (Microsoft Online Natural) 
+    // soportan perfectamente la velocidad x2.
+    let adaptedRate = speedRef.current;
+    if (!isEdge && speedRef.current > 1) {
+      adaptedRate = 1 + (speedRef.current - 1) * 0.25;
+    }
+    
+    utterance.rate = adaptedRate;
     utterance.lang = 'es-ES';
 
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const esVoice = voices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
-      if (esVoice) utterance.voice = esVoice;
+    // Usar las voces cargadas asíncronamente (soluciona problema en Chrome/Brave)
+    if (nativeVoices && nativeVoices.length > 0) {
+      // Priorizar voces locales de español (ej. Google español, Microsoft Sabina, etc.)
+      const esVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es') && v.localService);
+      if (esVoice) {
+        utterance.voice = esVoice;
+      } else {
+        // Fallback a cualquier voz en español si no hay locales
+        const anyEsVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
+        if (anyEsVoice) utterance.voice = anyEsVoice;
+      }
     }
 
     // Al cortar el string, el index devuelto arranca en 0 nuevamente. Usamos el offsetIndex para proyectarlo visualmente.
@@ -207,11 +274,46 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       }
     };
 
+    // En Chrome, algunas voces remotas (Google español) NO disparan onboundary.
+    // Añadimos un fallback simulado si el audio está sonando.
+    let simulationInterval = null;
+
     utterance.onstart = () => {
       setPlayState('playing');
+      
+      // Simulación de lectura para Chrome si no hay eventos onboundary.
+      // En Edge los eventos funcionan perfecto, así que no simulamos para evitar interferencias.
+      if (!isEdge) {
+        const charsPerSec = 15 * adaptedRate;
+        let elapsedMs = 0;
+        let lastTick = Date.now();
+        
+        simulationInterval = setInterval(() => {
+          const now = Date.now();
+          const delta = now - lastTick;
+          lastTick = now;
+          
+          if (utteranceRef.current !== utterance) return;
+          if (isPausedRef.current || window.speechSynthesis.paused) return; // Uso de ref para mayor fiabilidad
+          
+          elapsedMs += delta;
+          const estimatedChar = Math.floor((elapsedMs / 1000) * charsPerSec);
+          
+          // Solo actualizamos si no hemos sobrepasado el final y si onboundary no lo ha hecho
+          if (estimatedChar < sliceBuffer.length) {
+             // Usaremos esto como aproximación. Si onboundary llega a dispararse, lo sobreescribirá.
+             setActiveCharIndex((prev) => {
+               // Si el prev index está muy adelante, asumimos que onboundary sí funciona y no lo pisamos
+               if (prev > offsetIndex + estimatedChar + 10) return prev;
+               return offsetIndex + estimatedChar;
+             });
+          }
+        }, 100);
+      }
     };
 
     utterance.onend = (e) => {
+      if (simulationInterval) clearInterval(simulationInterval);
       if (utteranceRef.current !== utterance) return;
       utteranceRef.current = null;
       setPlayState('idle');
@@ -219,6 +321,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     };
 
     utterance.onerror = (e) => {
+      if (simulationInterval) clearInterval(simulationInterval);
       console.error("Error en SpeechSynthesis:", e);
       if (utteranceRef.current !== utterance) return;
       utteranceRef.current = null;
@@ -238,11 +341,13 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       if (audioRef.current && !audioRef.current.paused) {
          audioRef.current.pause();
          setPlayState('paused');
+         isPausedRef.current = true;
          return;
       }
       if (window.speechSynthesis) {
         window.speechSynthesis.pause();
         setPlayState('paused');
+        isPausedRef.current = true;
         return;
       }
     }
@@ -251,11 +356,23 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       if (audioRef.current && audioRef.current.paused) {
          audioRef.current.play();
          setPlayState('playing');
+         isPausedRef.current = false;
          return;
       }
-      if (window.speechSynthesis && window.speechSynthesis.paused) {
+      if (window.speechSynthesis) {
         window.speechSynthesis.resume();
+        
+        // Workaround para el bug de Chrome donde resume() a veces falla si el motor se quedó pegado:
+        // Si después de resumir sigue sin hablar, forzamos un reset desde la posición actual
+        setTimeout(() => {
+           if (playState === 'paused') return;
+           if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+              playFrom(activeCharIndex >= 0 ? activeCharIndex : 0);
+           }
+        }, 300);
+
         setPlayState('playing');
+        isPausedRef.current = false;
         return;
       }
     }
@@ -272,6 +389,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       window.speechSynthesis.cancel();
     }
     utteranceRef.current = null;
+    isPausedRef.current = false;
     setPlayState('idle');
     setActiveCharIndex(-1);
   };
@@ -453,7 +571,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             <input 
               id="tts-speed"
               name="ttsSpeed"
-              type="range" min="0.5" max="3.0" step="0.1" value={speed} 
+              type="range" min="0.5" max={useAITTS ? "3.0" : "2.0"} step="0.1" value={speed} 
               onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
               style={{ accentColor: 'var(--accent)', minWidth: '80px' }}
             />
@@ -467,11 +585,12 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             type="button"
             onClick={() => setShowAIConfig(!showAIConfig)}
             style={{
-              ...btnBase, background: useAITTS && elevenLabsKey ? 'var(--accent-light)' : 'transparent', color: 'var(--accent)',
-              borderColor: useAITTS && elevenLabsKey ? 'var(--accent)' : 'var(--border)'
+              ...btnBase, background: useAITTS ? 'var(--accent-light)' : 'transparent', color: 'var(--accent)',
+              borderColor: useAITTS ? 'var(--accent)' : 'var(--border)'
             }}
+            title="Activar voz de alta calidad (Nube) para evitar balbuceos a altas velocidades"
           >
-            <Sparkles size={14} /> Voz IA
+            <Sparkles size={14} /> Voz Nube
           </button>
 
           <button 
@@ -494,31 +613,29 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', animation: 'fadeIn 0.2s'
           }}>
             <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
-              <Settings size={16} /> Configuración de Voz IA (ElevenLabs)
+              <Settings size={16} /> Configuración de Voz en la Nube
             </h4>
             <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
-              Usa el API gratuito de ElevenLabs para una voz realista superior. Si falla o se acaban los créditos, 
-              automáticamente volveremos a la voz del navegador.
+              Activa esto para procesar el audio en la nube. <strong>¡Altamente recomendado para velocidades de x2 y x3!</strong> El audio procesado en la nube soporta altas velocidades sin "balbucear" ni cortarse.
+              <br/><br/>
+              <em>Si tienes configurada tu propia API Key de ElevenLabs, se usará automáticamente. De lo contrario, usaremos el motor de Google Cloud gratuito.</em>
             </p>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <input 
-                type="password" 
-                placeholder="Ingresa tu API Key de ElevenLabs" 
-                value={elevenLabsKey}
-                onChange={(e) => setElevenLabsKey(e.target.value)}
-                style={{
-                  padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
-                  background: 'var(--bg)', color: 'var(--text)', minWidth: '300px', flex: 1
-                }}
-              />
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
                 <input 
                   type="checkbox" 
                   checked={useAITTS} 
-                  onChange={(e) => setUseAITTS(e.target.checked)}
+                  onChange={(e) => {
+                    const isChecked = e.target.checked;
+                    setUseAITTS(isChecked);
+                    // Si desactivamos Voz Nube y la velocidad era mayor a 2, la limitamos a 2
+                    if (!isChecked && speed > 2.0) {
+                      handleSpeedChange(2.0);
+                    }
+                  }}
                   style={{ width: '18px', height: '18px', accentColor: 'var(--accent)' }}
                 />
-                Activar Voz IA
+                Usar Voz Nube (Evita balbuceos en x2/x3)
               </label>
             </div>
           </div>
@@ -533,7 +650,10 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           }}>
             {parsedElements.map((el) => {
                if (el.type === 'text') return <span key={el.key} style={{opacity: 0.6}}>{el.val}</span>;
-               const isActive = el.token.charIndex === activeCharIndex;
+               
+               // La palabra está activa si el índice actual (ya sea real o simulado) cae dentro de la palabra
+               const isActive = activeCharIndex >= el.token.charIndex && activeCharIndex < (el.token.charIndex + el.token.length);
+               
                return (
                  <WordToken 
                     key={el.key} 

@@ -83,4 +83,55 @@ router.post('/generate', async (req, res, next) => {
   }
 });
 
+// Nueva ruta para ElevenLabs
+router.post('/elevenlabs', async (req, res, next) => {
+  try {
+    const { text } = req.body;
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({ error: 'El texto no puede estar vacío.' });
+    }
+
+    const apiKey = req.headers['x-elevenlabs-api-key'] || process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      return res.status(401).json({ error: 'No se ha proporcionado una API Key de ElevenLabs y el servidor no tiene una predeterminada.' });
+    }
+
+    // Usar node-fetch nativo disponible en Node >= 18, o requerir 'node-fetch'
+    // Whisper backend usa node-fetch según el package.json (versión 3.x)
+    // Pero en Node 18+ global fetch está disponible. Lo usaremos.
+    const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJcg', {
+      method: 'POST',
+      headers: {
+        'Accept': 'audio/mpeg',
+        'Content-Type': 'application/json',
+        'xi-api-key': apiKey
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return res.status(response.status).json({
+        error: 'Error al comunicarse con ElevenLabs',
+        details: errorData
+      });
+    }
+
+    const buffer = await response.arrayBuffer();
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Disposition': 'attachment; filename="audio_elevenlabs.mp3"',
+    });
+    res.send(Buffer.from(buffer));
+
+  } catch (err) {
+    console.error('[TTS Router ElevenLabs] Error:', err);
+    next(err);
+  }
+});
+
 module.exports = router;

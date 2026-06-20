@@ -64,6 +64,7 @@ router.post('/upload', (req, res, next) => {
       originalName: req.file.originalname,
       fileSize: req.file.size,
       jobId,
+      apiKey: req.headers['x-groq-api-key'], // <- Leer API Key del cliente
       sendEvent,
       cleanup,
       getJob: () => activeJobs.get(jobId),
@@ -86,7 +87,7 @@ router.post('/upload', (req, res, next) => {
   });
 });
 
-async function processTranscription({ filePath, originalName, fileSize, jobId, sendEvent, cleanup, getJob }) {
+async function processTranscription({ filePath, originalName, fileSize, jobId, apiKey, sendEvent, cleanup, getJob }) {
   let chunkPaths = [];
   let audioToProcess = filePath;
   let isVideo = false;
@@ -165,7 +166,8 @@ async function processTranscription({ filePath, originalName, fileSize, jobId, s
           current,
           total,
         });
-      }
+      },
+      { apiKey } // Pasamos la apiKey al servicio
     );
 
     if (getJob()?.cancelled) throw new Error('Trabajo cancelado por el cliente');
