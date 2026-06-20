@@ -1,24 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles } from 'lucide-react';
+import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles, User, Settings2, Trash2 } from 'lucide-react';
 import { generateHash, getTTSAudio, saveTTSAudio } from '../utils/historyStorage';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
-// Sub-componente memoizado para máximo rendimiento al cambiar el activeIndex
 const WordToken = React.memo(({ token, isActive, onClick }) => {
   return (
     <span
       onClick={() => onClick(token.charIndex)}
-      style={{
-        cursor: 'pointer',
-        padding: '2px 4px',
-        borderRadius: '4px',
-        backgroundColor: isActive ? 'var(--accent, #6c63ff)' : 'transparent',
-        color: isActive ? '#fff' : 'inherit',
-        boxShadow: isActive ? '0 2px 6px rgba(108, 99, 255, 0.4)' : 'none',
-        opacity: isActive ? 1 : 0.7,
-        transition: 'all 0.1s ease-in',
-      }}
+      className={`cursor-pointer px-1 py-0.5 rounded transition-all duration-100 ${
+        isActive 
+          ? 'bg-primary-500 text-white shadow-md scale-105 inline-block opacity-100' 
+          : 'hover:bg-primary-50 dark:hover:bg-primary-900/30 opacity-80 hover:opacity-100'
+      }`}
       title="Clic para reproducir desde aquí"
     >
       {token.word}
@@ -29,7 +23,7 @@ const WordToken = React.memo(({ token, isActive, onClick }) => {
 export default function TextEditorTTS({ initialText = '', onReset, showReset = false, initialMetadata = null }) {
   const [text, setText] = useState(initialText);
   const [copied, setCopied] = useState(false);
-  const [playState, setPlayState] = useState('idle'); // 'idle' | 'playing' | 'paused'
+  const [playState, setPlayState] = useState('idle'); 
   const [speed, setSpeed] = useState(1);
   const [isDownloading, setIsDownloading] = useState(false);
   
@@ -41,13 +35,12 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
   const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [useAITTS, setUseAITTS] = useState(() => localStorage.getItem('useAITTS') === 'true');
+  const [cloudProvider, setCloudProvider] = useState(() => localStorage.getItem('cloudProvider') || 'elevenlabs');
   const [aiLoading, setAiLoading] = useState(false);
-  const [showAIConfig, setShowAIConfig] = useState(false);
+  const [showIncompatibleModal, setShowIncompatibleModal] = useState(false);
 
-  const activeWordRef = useRef(null);
-
-  // Voces nativas del navegador
   const [nativeVoices, setNativeVoices] = useState([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
 
   useEffect(() => {
     const loadVoices = () => {
@@ -55,25 +48,49 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         const availableVoices = window.speechSynthesis.getVoices();
         if (availableVoices.length > 0) {
           setNativeVoices(availableVoices);
+          if (!selectedVoiceURI) {
+            const browserLang = window.navigator.language || 'es-ES';
+            const baseLang = browserLang.split('-')[0];
+            
+            // 1. Try exact match with browser lang and local service
+            let defaultVoice = availableVoices.find(v => v.lang === browserLang && v.localService);
+            
+            // 2. Try match with base lang (e.g., 'es') and local service
+            if (!defaultVoice) {
+              defaultVoice = availableVoices.find(v => v.lang.startsWith(baseLang) && v.localService);
+            }
+            
+            // 3. Fallback to any 'es' voice
+            if (!defaultVoice) {
+              defaultVoice = availableVoices.find(v => v.lang.startsWith('es'));
+            }
+            
+            // 4. Fallback to any local or just the first one
+            if (!defaultVoice) {
+              defaultVoice = availableVoices.find(v => v.localService) || availableVoices[0];
+            }
+            
+            if (defaultVoice) setSelectedVoiceURI(defaultVoice.voiceURI);
+          }
         }
       }
     };
-
     loadVoices();
     if (window.speechSynthesis && window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
-  }, []);
+  }, [selectedVoiceURI]);
 
   useEffect(() => {
-    // Escuchar cambios locales si se actualiza la configuración general
     const key = localStorage.getItem('elevenLabsApiKey') || '';
     setElevenLabsKey(key);
   }, []);
 
-  useEffect(() => { localStorage.setItem('useAITTS', useAITTS); }, [useAITTS]);
+  useEffect(() => { 
+    localStorage.setItem('useAITTS', useAITTS); 
+    localStorage.setItem('cloudProvider', cloudProvider);
+  }, [useAITTS, cloudProvider]);
 
-  // Stop synthesis when component unmounts
   useEffect(() => {
     setText(initialText);
     return () => {
@@ -85,10 +102,8 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     };
   }, [initialText]);
 
-  // Actualizar ref speed
   useEffect(() => { speedRef.current = speed; }, [speed]);
 
-  // Manejo de tokens y posiciones
   const tokens = useMemo(() => {
     let result = [];
     let regex = /([\wáéíóúüñÁÉÍÓÚÜÑ]+)/g;
@@ -120,17 +135,13 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     return result;
   }, [text, tokens]);
 
-
   const jumpToOffset = (offset) => {
     playFrom(offset);
   };
 
   const playFrom = async (offsetIndex) => {
-    if (!text || !text.trim()) {
-      return; // No hay texto para reproducir
-    }
+    if (!text || !text.trim()) return;
 
-    // Stop current audio sources
     if (audioRef.current) {
        audioRef.current.pause();
        audioRef.current.currentTime = 0;
@@ -145,11 +156,10 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       return;
     }
 
-    // AI TTS / Cloud TTS Logic
     if (useAITTS) {
       setPlayState('playing');
       setAiLoading(true);
-      setActiveCharIndex(offsetIndex); // We won't get word boundaries with free AI easily, just start highlighting from offset
+      setActiveCharIndex(offsetIndex); 
 
       try {
         const hashKey = await generateHash(sliceBuffer);
@@ -160,41 +170,47 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         if (cached) {
           audioBlob = cached.audioBlob;
         } else {
-          // Leer la clave más actualizada del localStorage
           const localKey = localStorage.getItem('elevenLabsApiKey');
-          const headers = { 'Content-Type': 'application/json' };
           
-          if (localKey) {
-             headers['X-Elevenlabs-Api-Key'] = localKey;
-             const res = await fetch(`${API_BASE}/tts/elevenlabs`, {
-               method: 'POST',
-               headers,
-               body: JSON.stringify({ text: sliceBuffer })
-             });
-
-             if (!res.ok) {
-               console.warn('ElevenLabs Backend Error, cayendo a TTS nativo');
-               throw new Error('ElevenLabs API failed');
-             }
-             audioBlob = await res.blob();
-          } else {
-             // Fallback a Cloud TTS gratuito (soluciona el balbuceo en Chrome a altas velocidades)
+          const fetchGoogle = async () => {
              const res = await fetch(`${API_BASE}/tts/generate`, {
                method: 'POST',
-               headers,
+               headers: { 'Content-Type': 'application/json' },
                body: JSON.stringify({ text: sliceBuffer, lang: 'es', speed: 1 })
              });
+             if (!res.ok) throw new Error('Google Cloud TTS API failed');
+             return await res.blob();
+          };
 
-             if (!res.ok) throw new Error('Cloud TTS API failed');
-             audioBlob = await res.blob();
+          const fetchElevenLabs = async () => {
+             const res = await fetch(`${API_BASE}/tts/elevenlabs`, {
+               method: 'POST',
+               headers: { 
+                 'Content-Type': 'application/json',
+                 'X-Elevenlabs-Api-Key': localKey || ''
+               },
+               body: JSON.stringify({ text: sliceBuffer })
+             });
+             if (!res.ok) throw new Error('ElevenLabs API failed');
+             return await res.blob();
+          };
+
+          if (cloudProvider === 'elevenlabs') {
+             try {
+               audioBlob = await fetchElevenLabs();
+             } catch (err) {
+               console.warn('ElevenLabs falló o no está configurado, usando Google Translate como respaldo');
+               audioBlob = await fetchGoogle();
+             }
+          } else {
+             audioBlob = await fetchGoogle();
           }
-
-          await saveTTSAudio(hashKey, audioBlob); // Cachéamos el audio
+          await saveTTSAudio(hashKey, audioBlob);
         }
 
         const url = URL.createObjectURL(audioBlob);
         const audio = new Audio(url);
-        audio.preservesPitch = true; // Asegurar que no suene como ardilla a velocidades altas
+        audio.preservesPitch = true; 
         audio.playbackRate = speedRef.current;
         audioRef.current = audio;
         
@@ -213,39 +229,29 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
         
         await audio.play();
         setAiLoading(false);
-        return; // Success, don't execute native fallback
+        return; 
       } catch (err) {
         console.error(err);
         setAiLoading(false);
-        // Continuar con fallback nativo
       }
     }
 
-    // Fallback TTS Nativo
     if (!window.speechSynthesis || (window.speechSynthesis.getVoices().length === 0 && nativeVoices.length === 0)) {
-      alert("Tu navegador (ej. Brave) parece estar bloqueando las voces nativas. Por favor, marca la casilla 'Usar Voz Nube' para reproducir el audio, o verifica los escudos de privacidad.");
+      setShowIncompatibleModal(true);
       setPlayState('idle');
       setActiveCharIndex(-1);
       return;
     }
 
-    // Siempre cancelar y forzar 'resume' para destrabar colas buggeadas
     window.speechSynthesis.resume();
 
     utteranceRef.current = null;
     setActiveCharIndex(offsetIndex);
-    setPlayState('playing'); // Cambiar estado inmediatamente para feedback visual
+    setPlayState('playing'); 
 
     const utterance = new SpeechSynthesisUtterance(sliceBuffer);
-    
-    // Detección de Microsoft Edge
     const isEdge = window.navigator.userAgent.indexOf("Edg/") > -1;
 
-    // Adaptación global de velocidad para TTS nativo (Chrome, Brave, etc.)
-    // Los motores nativos tienden a balbucear y distorsionarse a rates muy altos.
-    // Suavizamos MUCHO la curva: si en la UI pide 2.0, al motor nativo le enviamos 1.25.
-    // IMPORTANTE: En Edge no aplicamos esta reducción porque sus voces nativas (Microsoft Online Natural) 
-    // soportan perfectamente la velocidad x2.
     let adaptedRate = speedRef.current;
     if (!isEdge && speedRef.current > 1) {
       adaptedRate = 1 + (speedRef.current - 1) * 0.25;
@@ -254,35 +260,30 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     utterance.rate = adaptedRate;
     utterance.lang = 'es-ES';
 
-    // Usar las voces cargadas asíncronamente (soluciona problema en Chrome/Brave)
     if (nativeVoices && nativeVoices.length > 0) {
-      // Priorizar voces locales de español (ej. Google español, Microsoft Sabina, etc.)
-      const esVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es') && v.localService);
-      if (esVoice) {
-        utterance.voice = esVoice;
+      if (selectedVoiceURI) {
+        const selected = nativeVoices.find(v => v.voiceURI === selectedVoiceURI);
+        if (selected) utterance.voice = selected;
       } else {
-        // Fallback a cualquier voz en español si no hay locales
-        const anyEsVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
-        if (anyEsVoice) utterance.voice = anyEsVoice;
+        const esVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es') && v.localService);
+        if (esVoice) utterance.voice = esVoice;
+        else {
+          const anyEsVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
+          if (anyEsVoice) utterance.voice = anyEsVoice;
+        }
       }
     }
 
-    // Al cortar el string, el index devuelto arranca en 0 nuevamente. Usamos el offsetIndex para proyectarlo visualmente.
     utterance.onboundary = (e) => {
       if (e && typeof e.charIndex === 'number') {
         setActiveCharIndex(offsetIndex + e.charIndex);
       }
     };
 
-    // En Chrome, algunas voces remotas (Google español) NO disparan onboundary.
-    // Añadimos un fallback simulado si el audio está sonando.
     let simulationInterval = null;
 
     utterance.onstart = () => {
       setPlayState('playing');
-      
-      // Simulación de lectura para Chrome si no hay eventos onboundary.
-      // En Edge los eventos funcionan perfecto, así que no simulamos para evitar interferencias.
       if (!isEdge) {
         const charsPerSec = 15 * adaptedRate;
         let elapsedMs = 0;
@@ -294,16 +295,13 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
           lastTick = now;
           
           if (utteranceRef.current !== utterance) return;
-          if (isPausedRef.current || window.speechSynthesis.paused) return; // Uso de ref para mayor fiabilidad
+          if (isPausedRef.current || window.speechSynthesis.paused) return; 
           
           elapsedMs += delta;
           const estimatedChar = Math.floor((elapsedMs / 1000) * charsPerSec);
           
-          // Solo actualizamos si no hemos sobrepasado el final y si onboundary no lo ha hecho
           if (estimatedChar < sliceBuffer.length) {
-             // Usaremos esto como aproximación. Si onboundary llega a dispararse, lo sobreescribirá.
              setActiveCharIndex((prev) => {
-               // Si el prev index está muy adelante, asumimos que onboundary sí funciona y no lo pisamos
                if (prev > offsetIndex + estimatedChar + 10) return prev;
                return offsetIndex + estimatedChar;
              });
@@ -330,9 +328,6 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     };
 
     utteranceRef.current = utterance;
-    
-    // Llamar a speak SIN setTimeout, ya que el setTimeout pierde el contexto de "Gesto del Usuario",
-    // y muchos navegadores bloquean la reproducción de audio sintético si no sucede síncronamente al clic.
     window.speechSynthesis.speak(utterance);
   };
 
@@ -361,9 +356,6 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       }
       if (window.speechSynthesis) {
         window.speechSynthesis.resume();
-        
-        // Workaround para el bug de Chrome donde resume() a veces falla si el motor se quedó pegado:
-        // Si después de resumir sigue sin hablar, forzamos un reset desde la posición actual
         setTimeout(() => {
            if (playState === 'paused') return;
            if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
@@ -394,13 +386,10 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     setActiveCharIndex(-1);
   };
 
-  // Cuando cambie la velocidad interactiva, si está play lo actualizamos on the fly seamless
   const handleSpeedChange = (newSpeed) => {
     setSpeed(newSpeed);
     speedRef.current = newSpeed;
-    if (audioRef.current) {
-      audioRef.current.playbackRate = newSpeed;
-    }
+    if (audioRef.current) audioRef.current.playbackRate = newSpeed;
     if (playState === 'playing' && activeCharIndex >= 0 && (!audioRef.current || audioRef.current.paused)) {
       playFrom(activeCharIndex);
     }
@@ -419,14 +408,6 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       document.body.removeChild(ta);
       setCopied(true); setTimeout(() => setCopied(false), 2500);
     }
-  };
-
-  const handleDownloadTxt = () => {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url;
-    a.download = `${initialMetadata?.fileName?.replace(/\.[^.]+$/, '') || 'documento'}.txt`;
-    a.click(); URL.revokeObjectURL(url);
   };
 
   const handleDownloadAudio = async () => {
@@ -456,283 +437,251 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     }
   };
 
-  const btnBase = {
-    padding: '10px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
-    fontSize: '14px', fontWeight: 500, display: 'flex', alignItems: 'center',
-    gap: '7px', transition: 'all 0.2s', cursor: 'pointer',
+  const handleDownloadText = (format) => {
+    if (!text.trim()) return;
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transcripcion.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <div style={{
-      marginTop: '24px', background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-    }}>
-      {/* Header */}
-      {initialMetadata && (
-        <div style={{
-          padding: '16px 20px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--surface2)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <CheckCircle size={18} />
-            <span style={{ fontWeight: 600, color: 'var(--success)' }}>Transcripción lista</span>
-          </div>
+    <div className="flex flex-col gap-6 animate-fade-in">
+      
+      {/* 2-Column Layout Grid */}
+      <div className="flex flex-col lg:flex-row gap-6 items-stretch">
+        
+        {/* Left Column: Editor */}
+        <div className="flex-1 flex flex-col bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow h-[400px] lg:h-auto lg:min-h-[400px]">
+          {/* Header & Toolbar */}
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/50 flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-800/20">
+            <div className="flex justify-between items-center">
+              <h4 className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <FileText size={16} /> Contenido del manuscrito
+              </h4>
+              <span className="text-xs font-bold text-slate-400 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-md shadow-sm">
+                {text.length} / 5,000
+              </span>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 items-center justify-between">
+               <div className="flex gap-2">
+                 <button onClick={() => setText('')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-600 dark:text-slate-400 rounded-lg transition-colors">
+                   <Trash2 size={14} /> Limpiar
+                 </button>
+                 <button onClick={handleCopy} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-lg transition-colors ${copied ? 'text-green-600 border-green-200 bg-green-50' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                   {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copiado' : 'Copiar'}
+                 </button>
+               </div>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={handleCopy}
-              style={{
-                ...btnBase,
-                background: copied ? 'rgba(74, 222, 128, 0.1)' : 'var(--accent-light)',
-                borderColor: copied ? 'var(--success)' : 'var(--accent)',
-                color: copied ? 'var(--success)' : 'var(--accent)',
-              }}
-            >
-              {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar transcripción</>}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadTxt}
-              style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
-            >
-              <FileText size={14} /> Descargar .txt
-            </button>
-
-            {showReset && onReset && (
-              <button
-                type="button"
-                onClick={onReset}
-                style={{
-                  ...btnBase,
-                  background: 'transparent',
-                  color: 'var(--text-muted)',
-                  borderColor: 'transparent',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--text)';
-                  e.currentTarget.style.borderColor = 'var(--border)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--text-muted)';
-                  e.currentTarget.style.borderColor = 'transparent';
-                }}
-              >
-                <RotateCcw size={14} /> Nueva transcripción
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Editor / Karaoke View */}
-      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        {/* TTS Advance Controls */}
-        <div style={{ 
-          display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--surface2)', 
-          padding: '12px 16px', borderRadius: 'var(--radius-sm)', flexWrap: 'wrap'
-        }}>
-          {/* Resume/Pause/Play */}
-          <button
-            type="button"
-            onClick={handleTogglePlay}
-            disabled={aiLoading}
-            style={{
-              ...btnBase,
-              background: playState === 'playing' ? 'var(--warning)' : 'var(--success)',
-              color: '#000', borderColor: 'transparent', fontWeight: 600,
-              opacity: aiLoading ? 0.6 : 1,
-            }}
-          >
-            {aiLoading ? <><Loader size={14} className="spin" /> Generando IA...</> : 
-             (playState === 'playing' ? <><Pause size={14} /> Pausar lectura</> : (playState==='paused' ? <><Play size={14} /> Reanudar</> : <><Play size={14} /> Iniciar</>))}
-          </button>
-
-          {playState !== 'idle' && (
-             <button 
-                type="button"
-                onClick={handleStop}
-                style={{ ...btnBase, background: 'var(--error)', color: '#fff', borderColor: 'transparent', fontWeight: 600 }}
-             >
-               <Square size={14} /> Detener
-             </button>
-          )}
-          
-          {/* Speed */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text)', marginLeft: '10px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 500 }}>Vel:</span>
-            <input 
-              id="tts-speed"
-              name="ttsSpeed"
-              type="range" min="0.5" max={useAITTS ? "3.0" : "2.0"} step="0.1" value={speed} 
-              onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-              style={{ accentColor: 'var(--accent)', minWidth: '80px' }}
-            />
-            <span style={{ fontSize: '14px', width: '35px' }}>{speed}x</span>
-          </div>
-
-          <div style={{ flex: 1 }} />
-
-          {/* Botón para Mostrar Config AI */}
-          <button 
-            type="button"
-            onClick={() => setShowAIConfig(!showAIConfig)}
-            style={{
-              ...btnBase, background: useAITTS ? 'var(--accent-light)' : 'transparent', color: 'var(--accent)',
-              borderColor: useAITTS ? 'var(--accent)' : 'var(--border)'
-            }}
-            title="Activar voz de alta calidad (Nube) para evitar balbuceos a altas velocidades"
-          >
-            <Sparkles size={14} /> Voz Nube
-          </button>
-
-          <button 
-            type="button"
-            onClick={handleDownloadAudio}
-            disabled={isDownloading || !text.trim()}
-            style={{
-              ...btnBase, background: 'var(--accent)', color: '#fff', borderColor: 'transparent',
-              opacity: (isDownloading || !text.trim()) ? 0.6 : 1,
-            }}
-          >
-            {isDownloading ? <><Loader size={14} /> Modulando MP3...</> : <><Download size={14} /> Bajar Audio</>}
-          </button>
-        </div>
-
-        {/* Panel de Configuración IA */}
-        {showAIConfig && (
-          <div style={{
-            background: 'var(--surface2)', border: '1px solid var(--accent)', borderRadius: 'var(--radius-sm)',
-            padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', animation: 'fadeIn 0.2s'
-          }}>
-            <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
-              <Settings size={16} /> Configuración de Voz en la Nube
-            </h4>
-            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
-              Activa esto para procesar el audio en la nube. <strong>¡Altamente recomendado para velocidades de x2 y x3!</strong> El audio procesado en la nube soporta altas velocidades sin "balbucear" ni cortarse.
-              <br/><br/>
-              <em>Si tienes configurada tu propia API Key de ElevenLabs, se usará automáticamente. De lo contrario, usaremos el motor de Google Cloud gratuito.</em>
-            </p>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
-                <input 
-                  type="checkbox" 
-                  checked={useAITTS} 
-                  onChange={(e) => {
-                    const isChecked = e.target.checked;
-                    setUseAITTS(isChecked);
-                    // Si desactivamos Voz Nube y la velocidad era mayor a 2, la limitamos a 2
-                    if (!isChecked && speed > 2.0) {
-                      handleSpeedChange(2.0);
-                    }
-                  }}
-                  style={{ width: '18px', height: '18px', accentColor: 'var(--accent)' }}
-                />
-                Usar Voz Nube (Evita balbuceos en x2/x3)
-              </label>
+               <div className="flex gap-2">
+                 <button onClick={() => handleDownloadText('txt')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg transition-colors shadow-sm" title="Descargar como TXT">
+                   <Download size={14} /> TXT
+                 </button>
+                 <button onClick={() => handleDownloadText('md')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg transition-colors shadow-sm" title="Descargar como Markdown">
+                   <Download size={14} /> MD
+                 </button>
+                 {showReset && onReset && (
+                    <button onClick={onReset} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-800/50 hover:bg-primary-100 dark:hover:bg-primary-900/40 rounded-lg transition-colors" title="Nueva transcripción">
+                      <RotateCcw size={14} /> Nueva
+                    </button>
+                 )}
+               </div>
             </div>
           </div>
-        )}
-
-        {playState !== 'idle' ? (
-          <div style={{
-            width: '100%', minHeight: '60vh', maxHeight: '80vh', overflowY: 'auto',
-            background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--accent)',
-            borderRadius: 'var(--radius-sm)', padding: '16px', fontSize: '18px', lineHeight: 2,
-            whiteSpace: 'pre-wrap', fontFamily: 'Inter, system-ui, sans-serif'
-          }}>
-            {parsedElements.map((el) => {
-               if (el.type === 'text') return <span key={el.key} style={{opacity: 0.6}}>{el.val}</span>;
-               
-               // La palabra está activa si el índice actual (ya sea real o simulado) cae dentro de la palabra
-               const isActive = activeCharIndex >= el.token.charIndex && activeCharIndex < (el.token.charIndex + el.token.length);
-               
-               return (
-                 <WordToken 
-                    key={el.key} 
-                    token={el.token} 
-                    isActive={isActive} 
-                    onClick={jumpToOffset}
-                 />
-               );
-            })}
+          
+          <div className="flex-1 min-h-0 relative">
+            {playState !== 'idle' ? (
+              <div className="absolute inset-0 p-4 overflow-y-auto text-slate-800 dark:text-slate-200 text-lg leading-loose font-sans bg-transparent whitespace-pre-wrap">
+                {parsedElements.map((el) => {
+                   if (el.type === 'text') return <span key={el.key} className="opacity-70">{el.val}</span>;
+                   const isActive = activeCharIndex >= el.token.charIndex && activeCharIndex < (el.token.charIndex + el.token.length);
+                   return <WordToken key={el.key} token={el.token} isActive={isActive} onClick={jumpToOffset} />;
+                })}
+              </div>
+            ) : (
+              <textarea
+                value={text} onChange={(e) => setText(e.target.value)}
+                placeholder="Escribe o pega el texto que deseas convertir en voz aquí..."
+                className="absolute inset-0 p-4 w-full h-full bg-transparent text-slate-800 dark:text-slate-200 text-base leading-loose resize-none overflow-y-auto focus:outline-none placeholder-slate-400"
+              />
+            )}
           </div>
-        ) : (
-          <textarea
-            value={text} onChange={(e) => setText(e.target.value)}
-            placeholder="Escribe tu texto..."
-            style={{
-              width: '100%', minHeight: '60vh', maxHeight: '80vh', background: 'var(--bg)',
-              color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-              padding: '16px', fontSize: '15px', lineHeight: 1.8, resize: 'vertical', outline: 'none',
-            }}
-          />
-        )}
+          
+        </div>
+
+        {/* Right Column: Settings */}
+        <div className="w-full lg:w-80 flex flex-col gap-6">
+          
+          {/* Action Banner (Sidebar Top) */}
+          <div className="w-full bg-primary-600 dark:bg-primary-700 text-white rounded-2xl p-6 shadow-xl flex flex-col gap-6 relative overflow-hidden">
+            <div className="flex items-center gap-4 z-10">
+              <button
+                onClick={handleTogglePlay}
+                disabled={aiLoading}
+                className={`w-14 h-14 bg-white text-primary-600 rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-lg flex-shrink-0 ${aiLoading ? 'opacity-70 cursor-wait' : ''}`}
+              >
+                 {aiLoading ? <Loader size={24} className="animate-spin" /> : 
+                 (playState === 'playing' ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-1" />)}
+              </button>
+              <div>
+                <h4 className="font-bold text-base mb-0.5">{playState === 'playing' ? 'Pausa' : 'Reproducir'}</h4>
+                <p className="text-primary-100 text-xs m-0 leading-tight">
+                  {playState === 'playing' ? 'Pausar reproducción' : 'Generar vista previa'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 w-full z-10">
+              <button 
+                onClick={handleStop}
+                disabled={playState === 'idle' && !aiLoading}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-white hover:bg-red-50 text-slate-800 hover:text-red-600 rounded-xl text-sm font-bold shadow-md transition-colors disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-slate-800"
+              >
+                <Square size={16} fill="currentColor" />
+                DETENER
+              </button>
+              
+              <button 
+                onClick={handleDownloadAudio}
+                disabled={isDownloading || !text.trim()}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-transparent border border-white/30 hover:bg-white/10 rounded-xl text-sm font-bold transition-colors disabled:opacity-50"
+              >
+                {isDownloading ? <Loader size={16} className="animate-spin" /> : <Download size={16} />} 
+                DESCARGAR MP3
+              </button>
+            </div>
+            
+            {/* Decorative background circle */}
+            <div className="absolute right-[-10%] top-[-10%] w-48 h-48 bg-white opacity-5 rounded-full blur-2xl pointer-events-none"></div>
+          </div>
+
+          {/* Card: Configuración de Voz */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+            <h4 className="flex items-center gap-2 font-bold text-secondary-900 dark:text-white mb-6">
+              <User size={18} className="text-primary-600 dark:text-primary-400" /> Configuración de Voz
+            </h4>
+            
+            <div className="mb-6">
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2">Voces Nativas (Local)</label>
+              <select 
+                value={selectedVoiceURI}
+                onChange={e => setSelectedVoiceURI(e.target.value)}
+                disabled={useAITTS}
+                className="w-full bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-primary-500/50 appearance-none cursor-pointer disabled:opacity-50"
+              >
+                {nativeVoices.length > 0 ? (
+                  nativeVoices.map(v => (
+                    <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
+                  ))
+                ) : (
+                  <option>Cargando voces locales...</option>
+                )}
+              </select>
+            </div>
+
+            <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+              <div className="flex justify-between items-center mb-2">
+                <h5 className="flex items-center gap-2 font-bold text-sm text-primary-600 dark:text-primary-400">
+                  <Sparkles size={16} /> Procesamiento en Nube
+                </h5>
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useAITTS ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <input 
+                      type="checkbox" 
+                      checked={useAITTS} 
+                      onChange={(e) => {
+                        const isChecked = e.target.checked;
+                        setUseAITTS(isChecked);
+                        if (!isChecked && speed > 2.0) {
+                          handleSpeedChange(2.0);
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${useAITTS ? 'translate-x-4' : 'translate-x-1'}`} />
+                  </div>
+                </label>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+                Usa APIs externas para evitar distorsiones en altas velocidades de reproducción (x2, x3).
+              </p>
+              
+              {useAITTS && (
+                <div className="flex flex-col gap-2 mt-3 animate-fade-in bg-slate-100/50 dark:bg-slate-900/30 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="cloudProvider" value="elevenlabs" checked={cloudProvider === 'elevenlabs'} onChange={(e) => setCloudProvider(e.target.value)} className="accent-primary-600" />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">ElevenLabs (Requiere API Key)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="cloudProvider" value="google" checked={cloudProvider === 'google'} onChange={(e) => setCloudProvider(e.target.value)} className="accent-primary-600" />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Google Translate (Gratuito)</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Card: Parámetros Técnicos */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+            <h4 className="flex items-center gap-2 font-bold text-secondary-900 dark:text-white mb-6">
+              <Settings2 size={18} className="text-primary-600 dark:text-primary-400" /> Parámetros Técnicos
+            </h4>
+
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-sm font-bold text-slate-800 dark:text-slate-200">Velocidad</label>
+                <span className="bg-primary-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">{speed.toFixed(1)}x</span>
+              </div>
+              <input 
+                type="range" min="0.5" max="2.0" step="0.1" value={speed} 
+                onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                className="w-full accent-primary-600 mb-2 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+                <span>Lento</span>
+                <span>Rápido</span>
+              </div>
+            </div>
+
+
+          </div>
+        </div>
       </div>
 
-      {!initialMetadata && (
-        <div style={{
-          padding: '16px 20px',
-          borderTop: '1px solid var(--border)',
-          display: 'flex',
-          gap: '10px',
-          flexWrap: 'wrap',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'var(--surface)',
-        }}>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={handleCopy}
-              style={{
-                ...btnBase,
-                background: copied ? 'rgba(74, 222, 128, 0.1)' : 'var(--accent-light)',
-                borderColor: copied ? 'var(--success)' : 'var(--accent)',
-                color: copied ? 'var(--success)' : 'var(--accent)',
-              }}
-            >
-              {copied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar transcripción</>}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadTxt}
-              style={{ ...btnBase, background: 'transparent', color: 'var(--text)' }}
-            >
-              <FileText size={14} /> Descargar .txt
-            </button>
+      {/* Incompatible Browser Modal */}
+      {showIncompatibleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 max-w-md w-full animate-slide-up">
+            <div className="flex items-center gap-3 mb-4 text-red-500">
+              <AlertTriangle size={28} />
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white">Navegador no compatible</h3>
+            </div>
+            <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed mb-6">
+              Este navegador no es compatible o está bloqueando las voces nativas (muy común en navegadores como Brave o en modo incógnito estricto).<br/><br/>
+              Favor de activar el <strong>Procesamiento en Nube</strong> y utilizar <strong>ElevenLabs</strong> (con tu propia API Key) o la versión gratuita de <strong>Google Translate</strong>.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setShowIncompatibleModal(false)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold transition-colors"
+              >
+                Cerrar
+              </button>
+              <button 
+                onClick={() => {
+                  setShowIncompatibleModal(false);
+                  setUseAITTS(true);
+                }}
+                className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold transition-colors shadow-md shadow-primary-600/20"
+              >
+                Activar Nube
+              </button>
+            </div>
           </div>
-
-          {showReset && onReset && (
-            <button
-              type="button"
-              onClick={onReset}
-              style={{
-                ...btnBase,
-                background: 'transparent',
-                color: 'var(--text-muted)',
-                borderColor: 'transparent',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--text)';
-                e.currentTarget.style.borderColor = 'var(--border)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--text-muted)';
-                e.currentTarget.style.borderColor = 'transparent';
-              }}
-            >
-              <RotateCcw size={14} /> Nueva transcripción
-            </button>
-          )}
         </div>
       )}
 

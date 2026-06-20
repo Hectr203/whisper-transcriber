@@ -50,102 +50,67 @@ export default function ApiKeysConfig({ onClose }) {
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-      backdropFilter: 'blur(4px)'
-    }}>
-      <div style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
-        padding: '24px',
-        width: '90%',
-        maxWidth: '500px',
-        boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-        position: 'relative'
-      }}>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 animate-fade-in">
+      <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-2xl p-8 w-full max-w-lg shadow-2xl relative">
         <button 
           onClick={onClose}
-          style={{
-            position: 'absolute', top: '16px', right: '16px',
-            background: 'none', border: 'none', color: 'var(--text-muted)',
-            cursor: 'pointer'
-          }}
+          className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
         >
           <X size={20} />
         </button>
 
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: 0, color: 'var(--text)' }}>
-          <Key size={22} color="var(--accent)" /> Configuración de API Keys
+        <h2 className="flex items-center gap-3 mt-0 mb-2 text-2xl font-bold text-slate-800 dark:text-slate-100">
+          <div className="p-2 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-xl">
+            <Key size={24} />
+          </div>
+          API Keys
         </h2>
         
-        <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '20px' }}>
+        <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">
           Si tienes tus propias credenciales, introdúcelas aquí. Se guardarán <strong>solo en tu navegador</strong> y tendrán prioridad sobre las predeterminadas del servidor.
         </p>
 
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: 'var(--text)' }}>
+        <div className="mb-5">
+          <label className="flex items-center gap-2 mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">
             Groq API Key (Whisper)
-            {savedGroq && <ShieldCheck size={14} color="var(--success)" style={{ marginLeft: '6px', verticalAlign: 'middle' }} />}
+            {savedGroq && <ShieldCheck size={16} className="text-green-500" />}
           </label>
           <input 
             type="password"
             value={groqKey}
             onChange={(e) => { setGroqKey(e.target.value); setSavedGroq(false); }}
             placeholder="gsk_..."
-            style={{
-              width: '100%', padding: '10px 12px', borderRadius: '8px',
-              border: '1px solid var(--border)', background: 'var(--bg)',
-              color: 'var(--text)'
-            }}
+            className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all font-mono"
           />
         </div>
 
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: 'var(--text)' }}>
+        <div className="mb-8">
+          <label className="flex items-center gap-2 mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">
             ElevenLabs API Key (Opcional, TTS)
-            {savedElevenLabs && <ShieldCheck size={14} color="var(--success)" style={{ marginLeft: '6px', verticalAlign: 'middle' }} />}
+            {savedElevenLabs && <ShieldCheck size={16} className="text-green-500" />}
           </label>
           <input 
             type="password"
             value={elevenLabsKey}
             onChange={(e) => { setElevenLabsKey(e.target.value); setSavedElevenLabs(false); }}
             placeholder="sk_..."
-            style={{
-              width: '100%', padding: '10px 12px', borderRadius: '8px',
-              border: '1px solid var(--border)', background: 'var(--bg)',
-              color: 'var(--text)'
-            }}
+            className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all font-mono"
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+        <div className="flex gap-3 justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
           <button 
             onClick={handleClear}
-            style={{
-              padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--error)',
-              background: 'transparent', color: 'var(--error)', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 500
-            }}
+            className="px-5 py-2.5 rounded-xl border-2 border-red-100 dark:border-red-900/30 bg-transparent text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer flex items-center gap-2 font-bold transition-colors"
           >
-            <Trash2 size={16} /> Borrar locales
+            <Trash2 size={16} /> Borrar
           </button>
           
           <button 
             onClick={() => { handleSave(); onClose(); }}
-            style={{
-              padding: '10px 16px', borderRadius: '8px', border: 'none',
-              background: 'var(--accent)', color: '#fff', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 500
-            }}
+            className="px-6 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white cursor-pointer flex items-center gap-2 font-bold transition-all shadow-sm transform hover:-translate-y-0.5"
           >
-            <Save size={16} /> Guardar y Cerrar
+            <Save size={16} /> Guardar
           </button>
         </div>
       </div>

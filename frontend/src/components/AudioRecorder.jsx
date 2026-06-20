@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic } from 'lucide-react';
+import { Mic, StopCircle, Play, Pause, Lock } from 'lucide-react';
 
 export default function AudioRecorder({ onRecordComplete, disabled }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -12,7 +12,6 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
   const timerRef = useRef(null);
   const streamRef = useRef(null);
 
-  // Referencias para la animación de la onda
   const canvasRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
@@ -26,7 +25,6 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
     };
   }, []);
 
-  // Necesario para reinicializar el canvas si fue desmontado
   useEffect(() => {
     if (isRecording && canvasRef.current && analyserRef.current) {
       drawWaveform();
@@ -72,11 +70,9 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
     const ctx = canvas.getContext('2d');
     const analyser = analyserRef.current;
     
-    // Configurar canvas para evitar que se vea borroso en pantallas retina
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     
-    // Si el rect width es 0 (ej. no está en el DOM), reintentamos en el próximo frame
     if (rect.width === 0) {
       animationRef.current = requestAnimationFrame(drawWaveform);
       return;
@@ -98,31 +94,26 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
       
       ctx.clearRect(0, 0, width, height);
       
-      // Dibujar las barras
       const barWidth = (width / bufferLength) * 2.5; 
       let x = 0;
       
       for (let i = 0; i < bufferLength; i++) {
-        // Normalizamos el valor al alto del canvas (máximo 255)
         const rawHeight = (dataArray[i] / 255) * height;
-        // Altura mínima para que se vea siempre una línea
-        const barHeight = Math.max(rawHeight, 2); 
+        const barHeight = Math.max(rawHeight, 4); 
         
-        // Color púrpura (similar al var(--accent))
-        ctx.fillStyle = 'rgba(167, 139, 250, 0.9)'; 
+        ctx.fillStyle = '#2563EB'; // Primary color
         
-        // Centramos las barras verticalmente
         const y = (height - barHeight) / 2;
         
         ctx.beginPath();
         if (ctx.roundRect) {
-          ctx.roundRect(x, y, barWidth, barHeight, 2);
+          ctx.roundRect(x, y, barWidth, barHeight, 4);
         } else {
           ctx.fillRect(x, y, barWidth, barHeight);
         }
         ctx.fill();
         
-        x += barWidth + 2;
+        x += barWidth + 3;
       }
     };
     
@@ -135,11 +126,10 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       
-      // Setup AudioContext & Analyser para la animación
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       audioContextRef.current = audioContext;
       const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 128; // Suficiente para unas barras gruesas (64 bins)
+      analyser.fftSize = 128; 
       analyserRef.current = analyser;
       
       const source = audioContext.createMediaStreamSource(stream);
@@ -172,7 +162,7 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
       startTimer();
     } catch (err) {
       console.error('Error al acceder al micrófono:', err);
-      setError('No se pudo acceder al micrófono o algo falló en la inicialización.');
+      setError('No se pudo acceder al micrófono o falló la inicialización.');
     }
   };
 
@@ -207,171 +197,87 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
     return `${mins}:${secs}`;
   };
 
+  // Sound wave mock icon for idle state
+  const SoundWaveMock = () => (
+    <div className="flex items-center justify-center gap-1.5 h-[60px] mb-6">
+      {[12, 24, 40, 24, 50, 60, 40, 30, 16].map((h, i) => (
+        <div key={i} className="w-[4px] rounded-full bg-primary-600 dark:bg-primary-500 opacity-80" style={{ height: `${h}px` }}></div>
+      ))}
+    </div>
+  );
+
   return (
-    <div style={{
-      width: '100%',
-      height: '100%',
-      marginTop: 0,
-      padding: '24px',
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '18px',
-      textAlign: 'center',
-      opacity: disabled ? 0.5 : 1,
-      pointerEvents: disabled ? 'none' : 'auto'
-    }}>
-      <h3 style={{ margin: 0, fontSize: '22px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <Mic size={22} /> Grabar Audio Directamente
-      </h3>
+    <div className={`w-full h-full flex flex-col min-h-[340px] bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl p-8 text-center shadow-sm hover:shadow-md transition-shadow ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
       
       {!isRecording ? (
-        <button
-          onClick={startRecording}
-          disabled={disabled}
-          style={{
-            minWidth: '240px',
-            padding: '16px 28px',
-            background: 'var(--accent)',
-            color: 'white',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: '18px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-            display: 'inline-flex',
-            justifyContent: 'center',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
-        >
-          ● Iniciar Grabación
-        </button>
-      ) : (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <SoundWaveMock />
           
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '18px',
-            fontWeight: 600,
-            color: isPaused ? 'var(--warning)' : 'var(--error)'
-          }}>
-            <span style={{
-              display: 'inline-block',
-              width: '12px',
-              height: '12px',
-              backgroundColor: isPaused ? 'var(--warning)' : 'var(--error)',
-              borderRadius: '50%',
-              animation: isPaused ? 'none' : 'pulse 1.5s infinite',
-            }} />
-            {isPaused ? 'Pausado' : 'Grabando'}: {formatTime(recordingTime)}
+          <h3 className="text-xl font-bold mb-3 text-secondary-900 dark:text-white">
+            Grabación Directa
+          </h3>
+
+          <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 max-w-xs leading-relaxed">
+            Usa tu micrófono para una transcripción instantánea y precisa.
+          </p>
+          
+          <button
+            onClick={startRecording}
+            disabled={disabled}
+            className="w-full max-w-[240px] px-6 py-3.5 bg-primary-600 hover:bg-primary-700 text-white rounded-full text-sm font-bold transition-all flex items-center justify-center gap-2 transform hover:-translate-y-0.5"
+          >
+            <Mic size={18} /> INICIAR GRABACIÓN
+          </button>
+          
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 font-medium">
+            <Lock size={12} /> Procesado de forma segura y privada
+          </p>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center animate-fade-in w-full">
+          
+          <div className={`flex items-center gap-3 text-3xl font-bold font-mono tracking-wider mb-6 ${isPaused ? 'text-orange-500' : 'text-primary-600'}`}>
+            <span className={`inline-block w-4 h-4 rounded-full ${isPaused ? 'bg-orange-500' : 'bg-primary-600 animate-pulse'}`} />
+            {formatTime(recordingTime)}
           </div>
 
           <canvas
             ref={canvasRef}
-            style={{ 
-              width: '100%', 
-              height: '80px', 
-              maxWidth: '400px',
-              display: 'block',
-              background: 'var(--surface2)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border)'
-            }}
+            className="w-full max-w-xs h-20 mb-8"
           />
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="flex gap-4">
             {isPaused ? (
               <button
                 onClick={resumeRecording}
-                style={{
-                  padding: '12px 20px',
-                  background: 'var(--success)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
+                className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-full text-sm font-bold transition-colors flex items-center gap-2"
               >
-                ▶ Continuar
+                <Play size={18} fill="currentColor" /> Continuar
               </button>
             ) : (
               <button
                 onClick={pauseRecording}
-                style={{
-                  padding: '12px 20px',
-                  background: 'var(--warning)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
+                className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-full text-sm font-bold transition-colors flex items-center gap-2"
               >
-                ⏸ Pausar
+                <Pause size={18} fill="currentColor" /> Pausar
               </button>
             )}
             
             <button
               onClick={stopRecording}
-              style={{
-                padding: '12px 20px',
-                background: 'transparent',
-                color: 'var(--error)',
-                border: '1px solid var(--error)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '15px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-full text-sm font-bold transition-colors flex items-center gap-2"
             >
-              ■ Finalizar
+              <StopCircle size={18} fill="currentColor" /> Finalizar
             </button>
           </div>
         </div>
       )}
 
       {error && (
-        <div style={{
-          padding: '8px 12px',
-          background: 'rgba(248, 113, 113, 0.1)',
-          border: '1px solid rgba(248, 113, 113, 0.3)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--error)',
-          fontSize: '14px',
-        }}>
+        <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-xl text-red-600 dark:text-red-400 text-sm font-medium">
           {error}
         </div>
       )}
-
-      <style>
-        {`
-          @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.2); }
-            100% { opacity: 1; transform: scale(1); }
-          }
-        `}
-      </style>
     </div>
   );
 }

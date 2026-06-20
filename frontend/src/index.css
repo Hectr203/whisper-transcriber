@@ -1,106 +1,191 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  /* Dark mode variables (Default - OLED style) */
-  --bg: #0F0F23;
-  --surface: #1E1B4B;
-  --surface2: #312E81;
-  --border: #4338CA;
-  --accent: #F97316;
-  --accent-hover: #EA580C;
-  --accent-light: rgba(249, 115, 22, 0.12);
-  --text: #F8FAFC;
-  --text-muted: #94A3B8;
-  --success: #4ade80;
-  --error: #f87171;
-  --warning: #fbbf24;
-  --radius: 16px;
-  --radius-sm: 8px;
-}
+@layer base {
+  body {
+    @apply font-sans antialiased bg-background-light text-textMain-light;
+  }
 
-[data-theme='light'] {
-  --bg: #F5F5F7;
-  --surface: #FFFFFF;
-  --surface2: #E2E8F0;
-  --border: #CBD5E1;
-  --accent: #F97316;
-  --accent-hover: #EA580C;
-  --accent-light: rgba(249, 115, 22, 0.12);
-  --text: #0F172A;
-  --text-muted: #475569;
-}
+  .dark body {
+    @apply bg-background-dark text-textMain-dark;
+  }
 
-html, body {
-  height: 100%;
-}
+  /* Animaciones custom adicionales si se necesitan */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 
-body {
-  font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.6;
-  min-height: 100vh;
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
 
-code, pre {
-  font-family: 'Fira Code', monospace;
-}
+  /* TEMAS DE COLOR DINÁMICOS */
+  
+  /* 1. Theme Ocean (Por defecto) */
+  :root, .theme-ocean {
+    --primary-50: #f0f9ff;
+    --primary-100: #e0f2fe;
+    --primary-200: #bae6fd;
+    --primary-300: #8ecae6;
+    --primary-400: #48cae4;
+    --primary-500: #219ebc;
+    --primary-600: #219ebc;
+    --primary-700: #1d859e;
+    --primary-800: #16697d;
+    --primary-900: #023047;
+    
+    --secondary-50: #f8fafc;
+    --secondary-100: #f1f5f9;
+    --secondary-200: #ffb703;
+    --secondary-500: #64748b;
+    --secondary-800: #1e293b;
+    --secondary-900: #0f172a;
+    
+    --tertiary-50: #fff7ed;
+    --tertiary-100: #ffedd5;
+    --tertiary-500: #fb8500;
+    --tertiary-600: #ea580c;
+    
+    --accent-orange: #fb8500;
+    --accent-yellow: #ffb703;
+    
+    --surface-light: #ffffff;
+    --surface-dark: #023047;
+    
+    --bg-light: #f8fafc;
+    --bg-dark: #011c2a;
+  }
 
-button {
-  cursor: pointer;
-  font-family: inherit;
-}
+  /* 2. Theme Tropical Bliss */
+  .theme-tropical {
+    --primary-50: #eef8fb;
+    --primary-100: #d4edf5;
+    --primary-200: #aedbeb;
+    --primary-300: #7cc3dc;
+    --primary-400: #4fa3c7;
+    --primary-500: #3486ab;
+    --primary-600: #227c9d;
+    --primary-700: #226480;
+    --primary-800: #21546b;
+    --primary-900: #1f475a;
+    
+    --secondary-50: #fef9ef;
+    --secondary-100: #f1f5f9;
+    --secondary-200: #ffcb77;
+    --secondary-500: #64748b;
+    --secondary-800: #1e293b;
+    --secondary-900: #0f172a;
+    
+    --tertiary-50: #edfaf8;
+    --tertiary-100: #d2f3ee;
+    --tertiary-500: #17c3b2;
+    --tertiary-600: #119c8f;
+    
+    --accent-orange: #fe6d73;
+    --accent-yellow: #ffcb77;
+    
+    --surface-light: #ffffff;
+    --surface-dark: #0f172a;
+    
+    --bg-light: #fef9ef;
+    --bg-dark: #020617;
+  }
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: var(--surface);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
+  /* 3. Theme Sunset (Naranja/Vue) */
+  .theme-sunset {
+    --primary-50: #fff7ed;
+    --primary-100: #ffedd5;
+    --primary-200: #fed7aa;
+    --primary-300: #fdba74;
+    --primary-400: #fb923c;
+    --primary-500: #f97316;
+    --primary-600: #ea580c;
+    --primary-700: #c2410c;
+    --primary-800: #9a3412;
+    --primary-900: #7c2d12;
+    
+    --secondary-50: #f8fafc;
+    --secondary-100: #f1f5f9;
+    --secondary-200: #e2e8f0;
+    --secondary-500: #64748b;
+    --secondary-800: #1e293b;
+    --secondary-900: #0f172a;
+    
+    --tertiary-50: #f0fdfa;
+    --tertiary-100: #ccfbf1;
+    --tertiary-500: #14b8a6;
+    --tertiary-600: #0d9488;
+    
+    --accent-orange: #ef4444;
+    --accent-yellow: #eab308;
+    
+    --surface-light: #ffffff;
+    --surface-dark: #0f172a;
+    
+    --bg-light: #f1f5f9;
+    --bg-dark: #020617;
+  }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+  /* 4. Theme Classic (Default Blue) */
+  .theme-classic {
+    --primary-50: #eff6ff;
+    --primary-100: #dbeafe;
+    --primary-200: #bfdbfe;
+    --primary-300: #93c5fd;
+    --primary-400: #60a5fa;
+    --primary-500: #3b82f6;
+    --primary-600: #2563eb;
+    --primary-700: #1d4ed8;
+    --primary-800: #1e40af;
+    --primary-900: #1e3a8a;
+    
+    --secondary-50: #f8fafc;
+    --secondary-100: #f1f5f9;
+    --secondary-200: #e2e8f0;
+    --secondary-500: #64748b;
+    --secondary-800: #1e293b;
+    --secondary-900: #0f172a;
+    
+    --tertiary-50: #faf5ff;
+    --tertiary-100: #f3e8ff;
+    --tertiary-500: #a855f7;
+    --tertiary-600: #9333ea;
+    
+    --accent-orange: #f97316;
+    --accent-yellow: #eab308;
+    
+    --surface-light: #ffffff;
+    --surface-dark: #1e293b;
+    
+    --bg-light: #f8fafc;
+    --bg-dark: #0f172a;
+  }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-.stt-panels {
-  display: grid;
-  gap: 24px;
-  align-items: stretch;
-  grid-auto-rows: 1fr;
-}
-
-.stt-panels > * {
-  width: 100%;
-  min-height: 420px;
-  height: 100%;
-}
-
-@media (min-width: 900px) {
-  .stt-panels {
-    grid-template-columns: 1fr 1fr;
+  /* Custom elegant scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-600 rounded-full transition-colors;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-500;
+  }
+  
+  /* Remove scrollbar background for Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+  .dark * {
+    scrollbar-color: #475569 transparent;
   }
 }

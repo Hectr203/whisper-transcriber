@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback } from 'react';
-import { AlertTriangle, Mic, Film } from 'lucide-react';
+import { CloudUpload, AlertTriangle } from 'lucide-react';
 
 const ALLOWED_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
   'audio/ogg', 'audio/flac', 'audio/webm', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
@@ -48,27 +48,19 @@ export default function UploadZone({ onFileSelected, disabled }) {
   const handleClick = () => { if (!disabled) inputRef.current?.click(); };
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="w-full h-full flex flex-col min-h-[340px]">
       <div
         onClick={handleClick}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        style={{
-          display: 'flex',
-          flex: 1,
-          flexDirection: 'column',
-          justifyContent: 'center',
-          border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`,
-          borderRadius: 'var(--radius)',
-          padding: '48px 32px',
-          textAlign: 'center',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          background: dragOver ? 'var(--accent-light)' : 'var(--surface)',
-          transition: 'all 0.2s ease',
-          opacity: disabled ? 0.5 : 1,
-          userSelect: 'none',
-        }}
+        className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-200 select-none ${
+          disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+        } ${
+          dragOver 
+            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10' 
+            : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-surface-dark hover:bg-slate-50 dark:hover:bg-slate-800/50'
+        }`}
       >
         <input
           id="upload-file-input"
@@ -77,62 +69,36 @@ export default function UploadZone({ onFileSelected, disabled }) {
           type="file"
           accept={ALLOWED_EXTS.join(',')}
           onChange={handleInputChange}
-          style={{ display: 'none' }}
+          className="hidden"
           disabled={disabled}
         />
 
-        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
-          <Mic size={48} />
-          <Film size={48} style={{ opacity: 0.7 }} />
+        <div className="flex justify-center mb-6">
+          <div className="p-5 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400">
+            <CloudUpload size={40} strokeWidth={2} />
+          </div>
         </div>
 
-        <p style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px', color: 'var(--text)' }}>
-          {dragOver ? 'Suelta el archivo aquí' : 'Arrastra tu archivo de audio o video'}
+        <h3 className="text-xl font-bold mb-3 text-secondary-900 dark:text-white">
+          Subir Archivo
+        </h3>
+
+        <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 max-w-xs leading-relaxed">
+          Arrastra y suelta tu audio aquí o haz clic para explorar tus archivos locales.
         </p>
 
-        <p style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '14px' }}>
-          o haz clic para seleccionar
-        </p>
-
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          marginBottom: '16px',
-        }}>
-          {['MP3', 'WAV', 'M4A', 'MP4', 'WEBM', 'MOV', 'AVI', 'MKV'].map(fmt => (
-            <span key={fmt} style={{
-              background: 'var(--surface2)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              padding: '2px 8px',
-              fontSize: '12px',
-              color: 'var(--text-muted)',
-              fontWeight: 500,
-            }}>{fmt}</span>
+        <div className="flex gap-2 justify-center flex-wrap">
+          {['MP3', 'WAV', 'M4A', 'FLAC'].map(fmt => (
+            <span key={fmt} className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-4 py-1.5 text-xs font-semibold rounded-full tracking-wide">
+              {fmt}
+            </span>
           ))}
         </div>
-
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          Máximo 1 GB — Transcripción automática con Whisper AI
-        </p>
       </div>
 
       {localError && (
-        <div style={{
-          marginTop: '12px',
-          padding: '12px 16px',
-          background: 'rgba(248, 113, 113, 0.1)',
-          border: '1px solid rgba(248, 113, 113, 0.3)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--error)',
-          fontSize: '14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
-          <AlertTriangle size={14} /> {localError}
+        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-xl flex items-center gap-3 text-red-600 dark:text-red-400 text-sm font-medium animate-fade-in shadow-sm">
+          <AlertTriangle size={18} /> {localError}
         </div>
       )}
     </div>

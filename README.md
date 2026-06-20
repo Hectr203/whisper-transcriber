@@ -1,143 +1,139 @@
-# Whisper Transcriber & TTS
+# Whisper Transcriber & TTS (AudioFlow)
 
-Aplicación web Full Stack para transcribir audios de gran tamaño utilizando el modelo **Whisper de OpenAI (vía Groq)** y sintetizar texto a voz utilizando **ElevenLabs** y el **TTS nativo del navegador**.
+Aplicación web Full Stack para transcribir audios y videos de gran tamaño utilizando el modelo **Whisper de OpenAI (vía Groq)** y sintetizar texto a voz utilizando **ElevenLabs** y el **TTS nativo del navegador**.
 
-Este proyecto está diseñado para funcionar de manera completamente *stateless* (sin base de datos) y permitir tanto una configuración centralizada (API keys en el servidor) como personalizada (cada usuario ingresa sus propias API keys guardadas en el navegador de manera segura).
-
-## 🚀 Características Principales
-
-* **Sin Base de Datos:** Todo se guarda en tu navegador (`localStorage` para configuraciones, `IndexedDB` para el historial de archivos grandes).
-* **Gestión Flexible de API Keys:** Usa las credenciales gratuitas de la empresa desde el `.env` o permite a los usuarios poner las suyas para no consumir los límites de la cuenta principal.
-* **Procesamiento de Archivos Grandes:** El backend utiliza `fluent-ffmpeg` para trocear audios de más de 24 MB para eludir los límites de la API de Whisper.
-* **Texto a Voz (TTS) Híbrido:**
-  * Modo Nativo: Utiliza la API de `speechSynthesis` integrada en Chrome/Edge/Firefox (sin límite, gratuito).
-  * Modo IA Premium: Integración con ElevenLabs a través del backend para voces ultra realistas.
+Este proyecto ha sido diseñado bajo los principios de *stateless architecture* (sin base de datos tradicional), priorizando la privacidad del usuario, la fluidez de la interfaz y la flexibilidad en la gestión de credenciales.
 
 ---
 
-## 📁 Estructura del Proyecto
+## 🚀 Características Principales
+
+### 🎙️ Procesamiento de Audio e IA
+* **Transcripción Ultrarrápida:** Usa el modelo Whisper a través de la infraestructura ultrarrápida de Groq.
+* **Elusión de Límites (Chunking):** El backend utiliza `fluent-ffmpeg` para trocear automáticamente audios y videos de más de 24 MB, sorteando las limitaciones estándar de las APIs de IA.
+* **Formatos Soportados:** MP3, WAV, M4A, FLAC, MP4.
+
+### 🗣️ Texto a Voz (TTS) Híbrido
+* **Modo Nativo Autodetectable:** Utiliza la API de `speechSynthesis` integrada en Chrome/Edge/Firefox. Detecta el idioma del navegador y preselecciona automáticamente la voz nativa correspondiente.
+* **Controles Avanzados:** Ajuste fino de Tono (Pitch), Velocidad (Rate) y Volumen.
+* **Modo IA Premium:** Integración directa con ElevenLabs para sintetizar voces ultra realistas.
+
+### 🎨 Motor de Estilos Dinámicos (UI/UX)
+* **Diseño Fluido y Expansivo:** Interfaz construida con Tailwind CSS, optimizando los márgenes laterales para aprovechar pantallas ultra-anchas en los paneles de lectura e historial.
+* **Selector de Temas en Tiempo Real:** Motor basado en *Variables CSS* que permite a los usuarios alternar entre paletas de colores exclusivas (Océano Profundo, Tropical Bliss, Atardecer, Clásico) de forma instantánea y persistente.
+* **Modo Oscuro OLED Premium:** Alternancia entre modo claro (fondos sutiles para alto contraste) y un modo oscuro con profundidad y estética OLED.
+* **Scrollbars Personalizadas:** Barras de desplazamiento elegantes y minimalistas en toda la aplicación.
+
+### 💾 Almacenamiento y Productividad
+* **Sin Base de Datos Externa:** Todo vive en el navegador del usuario. Las configuraciones en `localStorage` y los archivos pesados / audios en `IndexedDB`.
+* **Historial Avanzado (Filtros Cruzados):** Un panel de historial estilo *Masonry* con un buscador en tiempo real, filtros por fecha, duración, tipo de archivo (audio/video) y extensiones específicas (dinámicas).
+* **Exportación de Markdown:** Respeto íntegro por los párrafos originales. Opciones para copiar, limpiar o exportar el texto a formatos `.md`, `.txt` y `.csv`.
+
+---
+
+## 📁 Arquitectura y Estructura del Proyecto
 
 El proyecto está separado lógicamente en `frontend` y `backend`.
 
 ```text
 /
 ├── backend/
-│   ├── .env              # Variables de entorno secretas y de configuración
+│   ├── .env              # Variables de entorno secretas (Groq, ElevenLabs)
 │   ├── src/
 │   │   ├── middleware/   # Manejadores de subida de archivos (multer)
 │   │   ├── routes/       # Rutas Express (transcription.js, tts.js)
-│   │   ├── services/     # Lógica de FFmpeg y llamadas HTTP a Groq (whisperService.js)
-│   │   └── server.js     # Punto de entrada de la API
+│   │   ├── services/     # Lógica de FFmpeg y llamadas HTTP a la API (whisperService.js)
+│   │   └── server.js     # Punto de entrada de la API Express (Puerto 3003)
 │   └── package.json
 │
 └── frontend/
     ├── .env              # Variables públicas (VITE_API_URL)
     ├── src/
-    │   ├── components/   # React Components (ApiKeysConfig, TextEditorTTS, etc)
-    │   ├── utils/        # Lógica de almacenamiento IndexedDB (historyStorage.js)
-    │   └── App.jsx       # Interfaz Principal
-    ├── vite.config.js    # Configuración de compilación y proxy
+    │   ├── components/   # Componentes UI de React (ThemeSelector, HistoryPanel, etc.)
+    │   ├── utils/        # Lógica de IndexedDB (historyStorage.js)
+    │   ├── index.css     # Variables CSS del Motor de Temas
+    │   └── App.jsx       # Layout principal y enrutador de estados
+    ├── tailwind.config.js# Mapeo de paletas dinámicas y tokens de diseño
+    ├── vite.config.js    # Configuración de empaquetado y proxy de desarrollo
     └── package.json
 ```
 
 ---
 
-## ⚙️ Requisitos Previos
-
-* **Node.js** v18 o superior.
-* **FFmpeg** instalado en la máquina o servidor donde se ejecuta el backend.
-  * Windows: Descargar binarios o usar `winget install ffmpeg`
-  * macOS: `brew install ffmpeg`
-  * Ubuntu/Debian: `sudo apt install ffmpeg`
-
----
-
 ## 🛠️ Configuración e Instalación
 
-### 1. Configurar el Backend
+### Requisitos Previos
+* **Node.js** v18 o superior.
+* **FFmpeg** instalado (Obligatorio para trocear archivos):
+  * Windows: Descargar binarios o usar `winget install ffmpeg`
+  * macOS: `brew install ffmpeg`
+  * Linux: `sudo apt install ffmpeg`
 
+### Instalación Rápida
+Puedes usar el script raíz proporcionado para iniciar ambos entornos rápidamente:
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+### Instalación Manual
+
+**1. Configurar Backend:**
 ```bash
 cd backend
 npm install
 cp .env.example .env
 ```
+Edita `backend/.env`:
+* `GROQ_API_KEY`: Clave predeterminada de Groq (fallback).
+* `ELEVENLABS_API_KEY`: Clave predeterminada de ElevenLabs (fallback).
+* `PORT`: 3003.
 
-Abre el archivo `backend/.env` y configura tus variables:
-
-* `GROQ_API_KEY`: Tu clave predeterminada de Groq (necesaria para transcripciones si el usuario no pone la suya).
-* `ELEVENLABS_API_KEY`: Tu clave predeterminada de ElevenLabs (opcional, para TTS IA).
-* `PORT`: Puerto (ej. 3003).
-
-### 2. Configurar el Frontend
-
+**2. Configurar Frontend:**
 ```bash
 cd frontend
 npm install
 cp .env.example .env
 ```
-
-Abre `frontend/.env` (si lo creaste) y asegúrate de que apunte al backend (solo necesario en producción, en desarrollo Vite hace proxy automático):
-
-```env
-VITE_API_URL=http://localhost:3003/api
-```
+Asegúrate de que `frontend/.env` apunte al backend: `VITE_API_URL=http://localhost:3003/api`
 
 ---
 
-## 💻 Ejecución en Desarrollo
+## 🔒 Gestión Descentralizada de API Keys
 
-Para ejecutar ambos entornos localmente en modo desarrollo:
-
-**Terminal 1 (Backend):**
-```bash
-cd backend
-npm run dev
-# El servidor correrá en http://localhost:3003
-```
-
-**Terminal 2 (Frontend):**
-```bash
-cd frontend
-npm run dev
-# La aplicación abrirá en http://localhost:5173
-```
+Para evitar agotar las cuotas del servidor principal, AudioFlow implementa un modelo de delegación de credenciales:
+1. El usuario hace clic en **"Configuración / API Keys"** (icono de engranaje).
+2. Ingresa sus claves de Groq o ElevenLabs. Estas claves **solo se guardan localmente** en el navegador (`localStorage`).
+3. En cada petición, las claves viajan en los Headers (`X-Groq-Api-Key`, `X-Elevenlabs-Api-Key`).
+4. Si se proveen Headers, el servidor backend los usa como prioridad uno. Si no, usa el `.env` del servidor como respaldo.
 
 ---
 
-## 🔒 Privacidad y Configuración Personal de API Keys
+## 🚀 Peticiones a la API (Endpoints Principales)
 
-Por defecto, la aplicación usará la `GROQ_API_KEY` del backend.
-Sin embargo, para evitar agotar la cuota del servidor principal:
-
-1. El usuario puede hacer clic en el botón **"API Keys"** en la esquina superior derecha del frontend.
-2. Ingresar su propia clave de **Groq** o **ElevenLabs**.
-3. Estas claves **se guardan localmente usando `localStorage`**. No viajan por la URL, no se almacenan en el servidor, no quedan registradas en los logs del servidor y no afectan a otros usuarios.
-4. Cuando el usuario procesa un archivo, su clave se envía en el header HTTP (`X-Groq-Api-Key` o `X-Elevenlabs-Api-Key`) y el servidor la usa exclusivamente en esa petición.
-
-Si el usuario borra sus credenciales del frontend, la aplicación volverá a utilizar la configuración predeterminada del backend.
+* **`POST /api/transcription/transcribe`**: Recibe `multipart/form-data` con un archivo `audio` o `video`. Devuelve el texto transcrito usando Whisper. Trocea automáticamente archivos > 24MB.
+* **`POST /api/tts/synthesize`**: Recibe un JSON `{ text: "...", voiceId: "..." }`. Devuelve un `ArrayBuffer` de audio generado por ElevenLabs.
+* **`GET /api/tts/voices`**: Devuelve la lista de voces disponibles en ElevenLabs.
 
 ---
 
-## 🚀 Despliegue en Producción
+## 🌍 Despliegue en Producción
 
-### 1. Construir el Frontend
-```bash
-cd frontend
-npm run build
-```
-Esto generará una carpeta `dist/` con archivos HTML, CSS y JS listos para servir.
+1. **Construir el Frontend:**
+   ```bash
+   cd frontend && npm run build
+   ```
+   Esto generará una carpeta `dist/`.
 
-### 2. Preparar el Servidor Backend
-En producción, tu servidor Node.js debería:
-1. Ejecutar el backend con PM2 o Docker (`pm2 start src/server.js`).
-2. Servir los archivos estáticos de la carpeta `dist/` a través de **Nginx** o directamente integrarlos en Express si se prefiere.
-
-Asegúrate de que en el servidor de producción el `backend/.env` contenga las API Keys correctas si deseas proveer el servicio de manera gratuita a tus usuarios.
+2. **Despliegue del Backend:**
+   * Usa **PM2** o **Docker** para mantener vivo el proceso `node src/server.js`.
+   * Expón el servidor Express usando un proxy inverso con **Nginx** o **Caddy**, habilitando la subida de archivos grandes (`client_max_body_size 500M` en Nginx).
+   * Puedes servir la carpeta `dist/` del frontend usando Nginx en la misma máquina o utilizar un servicio de CDN / Edge (ej. Vercel, Netlify) apuntando la variable de entorno `VITE_API_URL` a la IP o dominio de tu backend.
 
 ---
 
 ## ⚠️ Limitaciones Conocidas
 
-* **Navegadores Soportados:** Se requiere un navegador moderno con soporte para `IndexedDB` y `SpeechSynthesis API` (Chrome, Edge, Firefox, Safari actualizados).
-* **Almacenamiento Local:** Si el usuario vacía la caché del navegador, perderá el historial de transcripciones (ya que viven en su máquina) y las API keys guardadas en `localStorage`.
-* **Archivos muy pesados:** El backend acepta subidas grandes, pero el navegador puede consumir demasiada memoria RAM al mantener el archivo `Blob` activo en `IndexedDB`. Archivos mayores a 500MB deben monitorearse.
+1. **Dependencia de IndexedDB:** El rendimiento de almacenamiento depende del navegador. Archivos excesivamente gigantes (ej. un video de 3GB) podrían agotar la cuota local o saturar la RAM durante el pase a `Blob`.
+2. **FFmpeg en Servidor:** El servidor de producción necesitará RAM/CPU decente si planeas procesar videos muy grandes de forma simultánea (recomendado > 2GB RAM si esperas alto tráfico de troceado de videos).
+3. **Pérdida de Configuración:** Al ser una app *stateless* (sin cuentas de usuario), si se vacía la caché del navegador, el historial de audios transcritos y la configuración de paletas/claves desaparecerán.
