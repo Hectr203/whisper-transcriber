@@ -1,6 +1,8 @@
 const express = require('express');
 const googleTTS = require('google-tts-api');
 const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -53,8 +55,8 @@ router.post('/generate', async (req, res, next) => {
     filterString += `atempo=${remainingSpeed.toFixed(2)}`;
 
     // Manejo de archvos temporales para FFmpeg
-    const tempDir = path.resolve(process.env.TEMP_DIR || './src/temp');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    const os = require('os');
+    const tempDir = os.tmpdir();
 
     const fileId = uuidv4();
     const inputPath = path.join(tempDir, `in_${fileId}.mp3`);

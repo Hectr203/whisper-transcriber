@@ -1,7 +1,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
-const fs = require('fs');
 const path = require('path');
+const azureBlobService = require('./azureBlobService');
 
 function getApiKey(optionsApiKey) {
   if (optionsApiKey) return optionsApiKey;
@@ -12,19 +12,27 @@ function getApiKey(optionsApiKey) {
 }
 
 /**
- * Transcribe un único archivo de audio con Whisper
- * @param {string} audioPath - Ruta del archivo
+ * Transcribe un archivo (o chunk) streameando desde Azure Blob Storage
+ * @param {object} chunk - { blob: 'ruta/en/azure' }
  * @param {object} options - Opciones adicionales
  * @returns {Promise<string>} - Texto transcrito
  */
-async function transcribeFile(audioPath, options = {}) {
+async function transcribeFile(chunk, options = {}) {
   const apiKey = getApiKey(options.apiKey);
-  const fileSizeMB = fs.statSync(audioPath).size / (1024 * 1024);
 
-  console.log(`[Whisper] Transcribiendo: ${path.basename(audioPath)} (${fileSizeMB.toFixed(1)}MB)`);
+  console.log(`[Whisper] Transcribiendo desde Blob: ${chunk.blob}`);
 
   const formData = new FormData();
-  formData.append('file', fs.createReadStream(audioPath));
+  
+  // Obtenemos el ReadableStream desde Azure Blob Storage
+  const fileStream = await azureBlobService.obtenerFlujoArchivo(chunk.blob);
+  
+  // FormData requiere un nombre de archivo al enviar streams
+  formData.append('file', fileStream, { 
+    filename: path.basename(chunk.blob),
+    contentType: 'audio/mpeg' 
+  });
+  
   formData.append('model', 'whisper-large-v3');
   formData.append('response_format', 'text');
   formData.append('temperature', '0');
@@ -42,7 +50,6 @@ async function transcribeFile(audioPath, options = {}) {
         ...formData.getHeaders(),
         Authorization: `Bearer ${apiKey}`,
       },
-      // Importante para enviar archivos grandes sin que Axios los bloquee localmente
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
     });
@@ -51,7 +58,6 @@ async function transcribeFile(audioPath, options = {}) {
   } catch (error) {
     let msg = error.message;
     if (error.response) {
-      // Capturamos la respuesta real de Groq (ej. cuota insuficiente, bad request)
       msg = `Status ${error.response.status} - ${JSON.stringify(error.response.data.error || error.response.data)}`;
     }
     throw new Error(`Groq API Error: ${msg}`);
@@ -59,35 +65,33 @@ async function transcribeFile(audioPath, options = {}) {
 }
 
 /**
- * Transcribe múltiples chunks y concatena el resultado
- * @param {string[]} chunkPaths - Rutas de los chunks
+ * Transcribe múltiples chunks desde Azure Blob y concatena el resultado
+ * @param {object[]} chunkPaths - Objetos con info del chunk { blob: 'ruta' }
  * @param {Function} onProgress - Callback de progreso
  * @param {object} options - Opciones de transcripción
  * @returns {Promise<string>} - Transcripción completa
  */
 async function transcribeChunks(chunkPaths, onProgress = () => {}, options = {}) {
   const transcriptions = [];
-  let previousText = ''; // Contexto para mejorar continuidad entre chunks
+  let previousText = '';
 
   for (let i = 0; i < chunkPaths.length; i++) {
-    const chunkPath = chunkPaths[i];
+    const chunkInfo = chunkPaths[i];
 
     console.log(`[Whisper] Procesando chunk ${i + 1}/${chunkPaths.length}`);
     onProgress(i + 1, chunkPaths.length, 'transcribing');
 
-    // Usamos el final del texto anterior como prompt para mejorar coherencia
     const prompt = previousText
-      ? previousText.split(' ').slice(-50).join(' ')  // últimas 50 palabras
+      ? previousText.split(' ').slice(-50).join(' ')
       : options.prompt;
 
-    const text = await transcribeFile(chunkPath, { ...options, prompt });
+    const text = await transcribeFile(chunkInfo, { ...options, prompt });
     transcriptions.push(text.trim());
     previousText = text;
 
     console.log(`[Whisper] Chunk ${i + 1} transcrito (${text.length} caracteres)`);
   }
 
-  // Unir con espacio, asegurando no duplicar puntuación
   return transcriptions
     .filter(t => t.length > 0)
     .join(' ')

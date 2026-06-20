@@ -1,13 +1,20 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
+// CORS manual sin dependencia externa
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const transcriptionRoutes = require('./routes/transcription');
 const ttsRoutes = require('./routes/tts');
+const azureBlobService = require('./services/azureBlobService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Inicializar Azure Blob Storage
+azureBlobService.inicializar().catch(err => {
+  console.error('[Startup] No se pudo inicializar Azure Blob Storage. ¿Están las credenciales en .env?', err.message);
+});
 
 // Validar entorno
 if (!process.env.GROQ_API_KEY) {
@@ -16,19 +23,33 @@ if (!process.env.GROQ_API_KEY) {
 if (!process.env.ELEVENLABS_API_KEY) {
   console.warn('⚠️  ADVERTENCIA: ELEVENLABS_API_KEY no está configurada en .env. El TTS con ElevenLabs requerirá que el cliente envíe su propia API Key.');
 }
+if (!process.env.AZURE_STORAGE_CONNECTION_STRING) {
+  console.warn('⚠️  ADVERTENCIA: AZURE_STORAGE_CONNECTION_STRING no está configurada en .env. El almacenamiento de archivos fallará.');
+}
 
-// Asegurar que los directorios temporales existan
-const tempDir = path.resolve(process.env.TEMP_DIR || './src/temp');
-const uploadsDir = path.resolve(process.env.UPLOADS_DIR || './src/uploads');
-[tempDir, uploadsDir].forEach(dir => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+// Configuración de CORS manual (para evitar problemas de preflight en Azure App Service)
+const allowedOriginsString = process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = new Set(allowedOriginsString.split(',').map(s => s.trim()));
+
+app.use((req, res, next) => {
+  const origin = (req.headers.origin || "").trim().replace(/\/+$/, "");
+
+  // Si no hay origen o no está en la lista (o es localhost/dev), permitimos por defecto en este ejemplo
+  // para mayor seguridad en produccion se debe restringir estrictamente.
+  if (origin && (allowedOrigins.has(origin) || origin.startsWith('http://localhost'))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Groq-Api-Key, X-Elevenlabs-Api-Key");
+    res.setHeader("Access-Control-Max-Age", "86400"); // 24 horas
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  return next();
 });
-
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5175',
-  methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -37,12 +58,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/transcription', transcriptionRoutes);
 app.use('/api/tts', ttsRoutes);
 
+// Endpoint manual de limpieza para cron jobs (opcional)
+app.post('/api/storage/cleanup', async (req, res) => {
+  try {
+    const eliminadosCargas = await azureBlobService.eliminarArchivosExpirados('cargas/');
+    const eliminadosTemporales = await azureBlobService.eliminarArchivosExpirados('temporales/');
+    res.json({ success: true, eliminados: eliminadosCargas + eliminadosTemporales });
+  } catch (err) {
+    res.status(500).json({ error: 'Error en limpieza de archivos', details: err.message });
+  }
+});
+
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  let azureConnected = false;
+  try {
+    if (azureBlobService.containerClient) {
+      azureConnected = await azureBlobService.containerClient.exists();
+    }
+  } catch (e) {}
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    azureBlobStorage: azureConnected ? 'connected' : 'disconnected'
   });
 });
 
@@ -73,20 +113,6 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`\n🎙️  Whisper Transcriber Backend`);
   console.log(`✅  Servidor corriendo en http://localhost:${PORT}`);
-  console.log(`📁  Directorio temporal: ${tempDir}`);
+  console.log(`📁  Directorio temporal del OS: ${os.tmpdir()}`);
   console.log(`🔑  API Key configurada: ${process.env.GROQ_API_KEY ? 'Sí' : 'NO - configura .env'}\n`);
 });
-
-// Limpiar archivos temporales al cerrar
-process.on('SIGTERM', cleanup);
-process.on('SIGINT', cleanup);
-
-function cleanup() {
-  console.log('\n🧹 Limpiando archivos temporales...');
-  [tempDir, uploadsDir].forEach(dir => {
-    fs.readdirSync(dir).forEach(file => {
-      try { fs.unlinkSync(path.join(dir, file)); } catch (_) {}
-    });
-  });
-  process.exit(0);
-}

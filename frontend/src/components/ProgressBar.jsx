@@ -2,10 +2,10 @@ import React from 'react';
 import { Search, Scissors, Bot, CheckCircle, Check } from 'lucide-react';
 
 const STAGE_LABELS = {
-  analyzing:    { label: 'Analizando archivo',         icon: <Search size={11} /> },
-  splitting:    { label: 'Dividiendo en segmentos',    icon: <Scissors size={11} /> },
-  transcribing: { label: 'Transcribiendo con Whisper', icon: <Bot size={11} /> },
-  complete:     { label: 'Transcripción completada',   icon: <CheckCircle size={11} /> },
+  analyzing:    { label: 'Analizando archivo',         icon: <Search size={14} /> },
+  splitting:    { label: 'Dividiendo en segmentos',    icon: <Scissors size={14} /> },
+  transcribing: { label: 'Transcribiendo con Whisper', icon: <Bot size={14} /> },
+  complete:     { label: 'Transcripción completada',   icon: <CheckCircle size={14} /> },
 };
 
 export default function ProgressBar({ status }) {
@@ -18,93 +18,56 @@ export default function ProgressBar({ status }) {
   const currentStageIdx = stages.indexOf(stage);
 
   return (
-    <div style={{
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)',
-      padding: '24px',
-      marginTop: '24px',
-    }}>
+    <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm animate-fade-in mt-6">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '20px' }}>{stageInfo.icon}</span>
-          <span style={{ fontWeight: 600, color: 'var(--text)' }}>{stageInfo.label}</span>
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center gap-3">
+          <span className="p-2 bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded-lg">{stageInfo.icon}</span>
+          <span className="font-bold text-slate-800 dark:text-slate-100">{stageInfo.label}</span>
         </div>
-        <span style={{
-          background: 'var(--accent-light)',
-          color: 'var(--accent)',
-          padding: '2px 10px',
-          borderRadius: '20px',
-          fontSize: '13px',
-          fontWeight: 600,
-        }}>{progress}%</span>
+        <span className="bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 px-3 py-1 rounded-full text-sm font-bold shadow-sm">
+          {progress}%
+        </span>
       </div>
 
       {/* Barra de progreso */}
-      <div style={{
-        height: '8px',
-        background: 'var(--surface2)',
-        borderRadius: '4px',
-        overflow: 'hidden',
-        marginBottom: '12px',
-      }}>
-        <div style={{
-          height: '100%',
-          width: `${progress}%`,
-          background: `linear-gradient(90deg, var(--accent), #a855f7)`,
-          borderRadius: '4px',
-          transition: 'width 0.4s ease',
-        }} />
+      <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-4 shadow-inner">
+        <div 
+          className="h-full bg-gradient-to-r from-primary-500 to-purple-500 rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+          style={{ width: `${progress}%` }} 
+        />
       </div>
 
       {/* Mensaje de estado */}
-      <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-5 font-medium">
         {message}
         {current && total && (
-          <span style={{ marginLeft: '8px', color: 'var(--accent)', fontWeight: 500 }}>
+          <span className="ml-2 text-primary-600 dark:text-primary-400 font-bold">
             ({current}/{total})
           </span>
         )}
       </p>
 
       {/* Pasos visuales */}
-      <div style={{
-        display: 'flex',
-        gap: '4px',
-        alignItems: 'center',
-      }}>
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-hide">
         {stages.slice(0, -1).map((s, idx) => (
           <React.Fragment key={s}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 10px',
-              borderRadius: '20px',
-              background: idx <= currentStageIdx ? 'var(--accent-light)' : 'var(--surface2)',
-              border: `1px solid ${idx <= currentStageIdx ? 'var(--accent)' : 'var(--border)'}`,
-              transition: 'all 0.3s ease',
-            }}>
-              <span style={{ fontSize: '11px' }}>
-                {idx < currentStageIdx ? <Check size={11} /> : STAGE_LABELS[s].icon}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 whitespace-nowrap ${
+              idx <= currentStageIdx 
+                ? 'bg-primary-50 dark:bg-primary-900/20 border-primary-300 dark:border-primary-700' 
+                : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+            }`}>
+              <span className={`text-xs ${idx <= currentStageIdx ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 dark:text-slate-500'}`}>
+                {idx < currentStageIdx ? <Check size={12} strokeWidth={3} /> : STAGE_LABELS[s].icon}
               </span>
-              <span style={{
-                fontSize: '11px',
-                color: idx <= currentStageIdx ? 'var(--accent)' : 'var(--text-muted)',
-                fontWeight: idx === currentStageIdx ? 600 : 400,
-              }}>
+              <span className={`text-xs ${idx <= currentStageIdx ? 'text-primary-700 dark:text-primary-300 font-bold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
                 {STAGE_LABELS[s].label}
               </span>
             </div>
             {idx < stages.length - 2 && (
-              <div style={{
-                flex: 1,
-                height: '1px',
-                background: idx < currentStageIdx ? 'var(--accent)' : 'var(--border)',
-                transition: 'background 0.3s ease',
-                minWidth: '12px',
-              }} />
+              <div className={`flex-1 h-0.5 min-w-[16px] transition-colors duration-300 ${
+                idx < currentStageIdx ? 'bg-primary-400 dark:bg-primary-600' : 'bg-slate-200 dark:bg-slate-700'
+              }`} />
             )}
           </React.Fragment>
         ))}
