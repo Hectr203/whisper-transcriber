@@ -320,7 +320,9 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
     utterance.onerror = (e) => {
       if (simulationInterval) clearInterval(simulationInterval);
-      console.error("Error en SpeechSynthesis:", e);
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.error("Error en SpeechSynthesis:", e);
+      }
       if (utteranceRef.current !== utterance) return;
       utteranceRef.current = null;
       setPlayState('idle');
@@ -328,6 +330,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     };
 
     utteranceRef.current = utterance;
+    window.speechSynthesisUtterance = utterance; // Prevenir Garbage Collection bug en Chrome
     window.speechSynthesis.speak(utterance);
   };
 
