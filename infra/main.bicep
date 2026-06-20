@@ -23,6 +23,9 @@ var logAnalyticsName = '${environmentName}-la'
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: logAnalyticsName
   location: location
+  tags: {
+    'azd-env-name': environmentName
+  }
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -36,6 +39,9 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
   kind: 'web'
+  tags: {
+    'azd-env-name': environmentName
+  }
   properties: {
     Application_Type: 'web'
     WorkspaceResourceId: logAnalytics.id
@@ -99,7 +105,7 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
   properties: {
     serverFarmId: appServicePlan.id
     siteConfig: {
-      linuxFxVersion: 'NODE|20-lts'
+      linuxFxVersion: 'NODE|24-lts'
       appCommandLine: 'npm start'
       alwaysOn: true // Habilitado en tier Basic
       appSettings: [

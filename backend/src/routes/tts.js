@@ -1,6 +1,8 @@
 const express = require('express');
 const googleTTS = require('google-tts-api');
 const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');

@@ -8,6 +8,7 @@ import HistoryPanel from './components/HistoryPanel';
 import ApiKeysConfig from './components/ApiKeysConfig';
 import ThemeSelector from './components/ThemeSelector';
 import { saveHistoryItem, getHistoryItems } from './utils/historyStorage';
+import logoImage from './images/logo fondo blanco.png';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -247,8 +248,8 @@ export default function App() {
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <div className="flex items-center flex-shrink-0 cursor-pointer" onClick={() => setActiveTab('stt')}>
-              <Mic className="h-6 w-6 text-primary-600 dark:text-primary-500 mr-2" />
-              <span className="font-bold text-xl tracking-tight text-secondary-900 dark:text-white">AudioFlow</span>
+              <img src={logoImage} alt="Voxelis Logo" className="h-8 w-auto mr-2" />
+              <span className="font-bold text-xl tracking-tight text-secondary-900 dark:text-white">Voxelis</span>
             </div>
 
             {/* Desktop Navigation */}
@@ -554,7 +555,7 @@ export default function App() {
       <footer className="w-full border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-surface-dark py-8 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
-            <strong className="text-secondary-900 dark:text-white mr-1">AudioFlow</strong> 
+            <strong className="text-secondary-900 dark:text-white mr-1">Voxelis</strong> 
             © 2024. Todos los derechos reservados.
           </p>
           <div className="flex space-x-6 text-sm text-slate-500 dark:text-slate-400">
