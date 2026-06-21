@@ -101,7 +101,7 @@ router.post('/elevenlabs', async (req, res, next) => {
     // Usar node-fetch nativo disponible en Node >= 18, o requerir 'node-fetch'
     // Whisper backend usa node-fetch según el package.json (versión 3.x)
     // Pero en Node 18+ global fetch está disponible. Lo usaremos.
-    const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJcg', {
+    const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB', {
       method: 'POST',
       headers: {
         'Accept': 'audio/mpeg',

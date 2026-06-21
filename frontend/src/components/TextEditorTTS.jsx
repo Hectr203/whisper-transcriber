@@ -233,6 +233,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
       } catch (err) {
         console.error(err);
         setAiLoading(false);
+        alert('Hubo un error con los servicios de nube. Por favor, asegúrese de configurar su propia API Key de ElevenLabs en las configuraciones para evitar este problema.');
       }
     }
 
@@ -320,7 +321,9 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
 
     utterance.onerror = (e) => {
       if (simulationInterval) clearInterval(simulationInterval);
-      console.error("Error en SpeechSynthesis:", e);
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
+        console.error("Error en SpeechSynthesis:", e);
+      }
       if (utteranceRef.current !== utterance) return;
       utteranceRef.current = null;
       setPlayState('idle');
@@ -328,6 +331,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     };
 
     utteranceRef.current = utterance;
+    window.speechSynthesisUtterance = utterance; // Prevenir Garbage Collection bug en Chrome
     window.speechSynthesis.speak(utterance);
   };
 
@@ -637,7 +641,7 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
                 <span className="bg-primary-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">{speed.toFixed(1)}x</span>
               </div>
               <input 
-                type="range" min="0.5" max="2.0" step="0.1" value={speed} 
+                type="range" min="0.5" max={useAITTS ? "3.0" : "2.0"} step="0.1" value={speed} 
                 onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
                 className="w-full accent-primary-600 mb-2 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer"
               />
