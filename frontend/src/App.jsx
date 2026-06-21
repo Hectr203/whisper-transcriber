@@ -5,6 +5,7 @@ import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
 import TextEditorTTS from './components/TextEditorTTS';
 import HistoryPanel from './components/HistoryPanel';
+import YouTubePanel from './components/YouTubePanel';
 import ApiKeysConfig from './components/ApiKeysConfig';
 import ThemeSelector from './components/ThemeSelector';
 import { saveHistoryItem, getHistoryItems } from './utils/historyStorage';
@@ -275,6 +276,16 @@ export default function App() {
                 Texto a Voz
               </button>
               <button
+                onClick={() => setActiveTab('youtube')}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-colors ${
+                  activeTab === 'youtube'
+                    ? 'border-primary-600 text-primary-600 dark:border-primary-500 dark:text-primary-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                YouTube
+              </button>
+              <button
                 onClick={() => setActiveTab('history')}
                 className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-colors ${
                   activeTab === 'history'
@@ -349,6 +360,14 @@ export default function App() {
               }`}
             >
               Texto a Voz
+            </button>
+            <button
+              onClick={() => { setActiveTab('youtube'); setMobileMenuOpen(false); }}
+              className={`block w-full text-left pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                activeTab === 'youtube' ? 'bg-primary-50 border-primary-600 text-primary-700 dark:bg-primary-900/20 dark:border-primary-500 dark:text-primary-400' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              YouTube
             </button>
             <button
               onClick={() => { setActiveTab('history'); setMobileMenuOpen(false); }}
@@ -548,6 +567,11 @@ export default function App() {
             initialText="" 
             showReset={false}
           />
+        </div>
+
+        {/* YOUTUBE TAB */}
+        <div className={`animate-fade-in ${activeTab === 'youtube' ? 'block' : 'hidden'}`}>
+          <YouTubePanel onRefreshHistory={loadHistory} />
         </div>
       </main>
 

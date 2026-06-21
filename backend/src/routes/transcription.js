@@ -275,4 +275,4 @@ router.delete('/cancel/:jobId', (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { router, processTranscription, activeJobs };

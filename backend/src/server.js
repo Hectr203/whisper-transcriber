@@ -1,14 +1,17 @@
 require('dotenv').config();
 const express = require('express');
+const morgan = require('morgan');
 // CORS manual sin dependencia externa
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const transcriptionRoutes = require('./routes/transcription');
+const { router: transcriptionRoutes } = require('./routes/transcription');
 const ttsRoutes = require('./routes/tts');
+const youtubeRoutes = require('./routes/youtube');
 const azureBlobService = require('./services/azureBlobService');
 
 const app = express();
+app.use(morgan('dev')); // Logger para la consola
 const PORT = process.env.PORT || 3001;
 
 // Inicializar Azure Blob Storage
@@ -57,6 +60,7 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 app.use('/api/transcription', transcriptionRoutes);
 app.use('/api/tts', ttsRoutes);
+app.use('/api/youtube', youtubeRoutes);
 
 // Endpoint manual de limpieza para cron jobs (opcional)
 app.post('/api/storage/cleanup', async (req, res) => {
