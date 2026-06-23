@@ -1,8 +1,10 @@
-# Whisper Transcriber & TTS (AudioFlow)
+# Voxelis - Whisper Transcriber & TTS
 
 Aplicación web Full Stack para transcribir audios y videos de gran tamaño utilizando el modelo **Whisper de OpenAI (vía Groq)** y sintetizar texto a voz utilizando **ElevenLabs** y el **TTS nativo del navegador**.
 
 Este proyecto ha sido diseñado bajo los principios de *stateless architecture* (sin base de datos tradicional), priorizando la privacidad del usuario, la fluidez de la interfaz y la flexibilidad en la gestión de credenciales.
+
+> Para una explicación comercial, casos de uso, arquitectura para desarrolladores, ventajas y fuentes de referencia, consulta [GUIA_COMERCIAL_Y_TECNICA.md](./GUIA_COMERCIAL_Y_TECNICA.md).
 
 ---
 
@@ -69,13 +71,6 @@ El proyecto está separado lógicamente en `frontend` y `backend`.
   * macOS: `brew install ffmpeg`
   * Linux: `sudo apt install ffmpeg`
 
-### Instalación Rápida
-Puedes usar el script raíz proporcionado para iniciar ambos entornos rápidamente:
-```bash
-chmod +x start.sh
-./start.sh
-```
-
 ### Instalación Manual
 
 **1. Configurar Backend:**
@@ -87,7 +82,9 @@ cp .env.example .env
 Edita `backend/.env`:
 * `GROQ_API_KEY`: Clave predeterminada de Groq (fallback).
 * `ELEVENLABS_API_KEY`: Clave predeterminada de ElevenLabs (fallback).
-* `PORT`: 3003.
+* `AZURE_STORAGE_CONNECTION_STRING`: Cadena de conexión para Azure Blob Storage.
+* `AZURE_STORAGE_CONTAINER_NAME`: Contenedor para archivos temporales.
+* `PORT`: 3001 por defecto si no se define.
 
 **2. Configurar Frontend:**
 ```bash
@@ -111,9 +108,14 @@ Para evitar agotar las cuotas del servidor principal, AudioFlow implementa un mo
 
 ## 🚀 Peticiones a la API (Endpoints Principales)
 
-* **`POST /api/transcription/transcribe`**: Recibe `multipart/form-data` con un archivo `audio` o `video`. Devuelve el texto transcrito usando Whisper. Trocea automáticamente archivos > 24MB.
-* **`POST /api/tts/synthesize`**: Recibe un JSON `{ text: "...", voiceId: "..." }`. Devuelve un `ArrayBuffer` de audio generado por ElevenLabs.
-* **`GET /api/tts/voices`**: Devuelve la lista de voces disponibles en ElevenLabs.
+* **`POST /api/transcription/upload`**: Recibe `multipart/form-data` con un archivo en el campo `audio`. Devuelve eventos SSE con progreso y resultado final. Trocea automáticamente archivos grandes.
+* **`DELETE /api/transcription/cancel/:jobId`**: Marca un trabajo activo como cancelado.
+* **`POST /api/youtube/analyze`**: Analiza un video o playlist de YouTube.
+* **`GET /api/youtube/download`**: Descarga audio o video desde una URL de YouTube.
+* **`POST /api/youtube/transcribe`**: Descarga audio de YouTube y reutiliza el flujo de transcripción.
+* **`POST /api/tts/generate`**: Recibe `{ text, lang, speed }` y genera audio MP3 usando `google-tts-api`.
+* **`POST /api/tts/elevenlabs`**: Recibe `{ text }` y genera audio MP3 con ElevenLabs.
+* **`GET /api/health`**: Verifica estado del backend y conexión con Azure Blob Storage.
 
 ---
 
