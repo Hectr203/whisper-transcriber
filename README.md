@@ -11,9 +11,10 @@ Este proyecto ha sido diseñado bajo los principios de *stateless architecture* 
 ## 🚀 Características Principales
 
 ### 🎙️ Procesamiento de Audio e IA
-* **Transcripción Ultrarrápida:** Usa el modelo Whisper a través de la infraestructura ultrarrápida de Groq.
-* **Elusión de Límites (Chunking):** El backend utiliza `fluent-ffmpeg` para trocear automáticamente audios y videos de más de 24 MB, sorteando las limitaciones estándar de las APIs de IA.
-* **Formatos Soportados:** MP3, WAV, M4A, FLAC, MP4.
+* **Transcripción con Whisper vía Groq:** Convierte voz en texto usando `whisper-large-v3`.
+* **Procesamiento de archivos grandes:** El backend utiliza `fluent-ffmpeg` para dividir automáticamente audios y videos cuando superan el tamaño objetivo por segmento.
+* **Audio desde video:** Si el archivo contiene video, FFmpeg extrae primero la pista de audio.
+* **Formatos soportados:** MP3, WAV, M4A, OGG, FLAC, MP4, WebM, AAC, MOV, AVI y MKV.
 
 ### 🗣️ Texto a Voz (TTS) Híbrido
 * **Modo Nativo Autodetectable:** Utiliza la API de `speechSynthesis` integrada en Chrome/Edge/Firefox. Detecta el idioma del navegador y preselecciona automáticamente la voz nativa correspondiente.
@@ -27,9 +28,9 @@ Este proyecto ha sido diseñado bajo los principios de *stateless architecture* 
 * **Scrollbars Personalizadas:** Barras de desplazamiento elegantes y minimalistas en toda la aplicación.
 
 ### 💾 Almacenamiento y Productividad
-* **Sin Base de Datos Externa:** Todo vive en el navegador del usuario. Las configuraciones en `localStorage` y los archivos pesados / audios en `IndexedDB`.
-* **Historial Avanzado (Filtros Cruzados):** Un panel de historial estilo *Masonry* con un buscador en tiempo real, filtros por fecha, duración, tipo de archivo (audio/video) y extensiones específicas (dinámicas).
-* **Exportación de Markdown:** Respeto íntegro por los párrafos originales. Opciones para copiar, limpiar o exportar el texto a formatos `.md`, `.txt` y `.csv`.
+* **Sin base de datos de usuarios:** Las configuraciones viven en `localStorage` y el historial/cache TTS en `IndexedDB`.
+* **Historial con filtros:** Búsqueda por nombre, fecha, hora, tipo de archivo y extensión.
+* **Exportación sencilla:** Opciones para copiar o descargar transcripciones en `.txt` y `.md`.
 
 ---
 
@@ -45,7 +46,7 @@ El proyecto está separado lógicamente en `frontend` y `backend`.
 │   │   ├── middleware/   # Manejadores de subida de archivos (multer)
 │   │   ├── routes/       # Rutas Express (transcription.js, tts.js)
 │   │   ├── services/     # Lógica de FFmpeg y llamadas HTTP a la API (whisperService.js)
-│   │   └── server.js     # Punto de entrada de la API Express (Puerto 3003)
+│   │   └── server.js     # Punto de entrada de la API Express (Puerto 3001 por defecto)
 │   └── package.json
 │
 └── frontend/
@@ -84,6 +85,8 @@ Edita `backend/.env`:
 * `ELEVENLABS_API_KEY`: Clave predeterminada de ElevenLabs (fallback).
 * `AZURE_STORAGE_CONNECTION_STRING`: Cadena de conexión para Azure Blob Storage.
 * `AZURE_STORAGE_CONTAINER_NAME`: Contenedor para archivos temporales.
+* `LOCAL_STORAGE_DIR`: Carpeta local usada como fallback cuando Azure no está configurado o falla.
+* `TEMP_DIR` / `UPLOADS_DIR`: Carpetas locales para archivos temporales de FFmpeg y subidas iniciales.
 * `PORT`: 3001 por defecto si no se define.
 
 **2. Configurar Frontend:**
@@ -92,13 +95,13 @@ cd frontend
 npm install
 cp .env.example .env
 ```
-Asegúrate de que `frontend/.env` apunte al backend: `VITE_API_URL=http://localhost:3003/api`
+Asegúrate de que `frontend/.env` apunte al backend: `VITE_API_URL=http://localhost:3001/api`
 
 ---
 
 ## 🔒 Gestión Descentralizada de API Keys
 
-Para evitar agotar las cuotas del servidor principal, AudioFlow implementa un modelo de delegación de credenciales:
+Para evitar agotar las cuotas del servidor principal, Voxelis implementa un modelo de delegación de credenciales:
 1. El usuario hace clic en **"Configuración / API Keys"** (icono de engranaje).
 2. Ingresa sus claves de Groq o ElevenLabs. Estas claves **solo se guardan localmente** en el navegador (`localStorage`).
 3. En cada petición, las claves viajan en los Headers (`X-Groq-Api-Key`, `X-Elevenlabs-Api-Key`).
@@ -117,6 +120,12 @@ Para evitar agotar las cuotas del servidor principal, AudioFlow implementa un mo
 * **`POST /api/tts/elevenlabs`**: Recibe `{ text }` y genera audio MP3 con ElevenLabs.
 * **`GET /api/health`**: Verifica estado del backend y conexión con Azure Blob Storage.
 
+### Almacenamiento temporal sin Azure
+
+Azure Blob Storage es opcional para pruebas locales. Si `AZURE_STORAGE_CONNECTION_STRING` no está configurada, o si Azure falla durante la subida, el backend usa almacenamiento local temporal en `backend/uploads` y `backend/temp`.
+
+Al terminar la transcripción, el backend elimina el archivo original, los audios extraídos y los segmentos temporales asociados al trabajo.
+
 ---
 
 ## 🌍 Despliegue en Producción
@@ -131,6 +140,20 @@ Para evitar agotar las cuotas del servidor principal, AudioFlow implementa un mo
    * Usa **PM2** o **Docker** para mantener vivo el proceso `node src/server.js`.
    * Expón el servidor Express usando un proxy inverso con **Nginx** o **Caddy**, habilitando la subida de archivos grandes (`client_max_body_size 500M` en Nginx).
    * Puedes servir la carpeta `dist/` del frontend usando Nginx en la misma máquina o utilizar un servicio de CDN / Edge (ej. Vercel, Netlify) apuntando la variable de entorno `VITE_API_URL` a la IP o dominio de tu backend.
+
+### Docker Compose
+
+También puedes levantar ambos servicios con Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+El frontend quedará disponible en `http://localhost:8080` y el backend en `http://localhost:3001`.
+
+### Contrato de API
+
+El contrato base de endpoints está documentado en [`docs/openapi.yaml`](./docs/openapi.yaml).
 
 ---
 

@@ -1,0 +1,187 @@
+openapi: 3.0.3
+info:
+  title: Voxelis API
+  version: 1.0.0
+  description: API base para transcripcion, YouTube, texto a voz y estado del servicio.
+servers:
+  - url: http://localhost:3001/api
+paths:
+  /health:
+    get:
+      summary: Verifica el estado del backend y del almacenamiento temporal.
+      responses:
+        "200":
+          description: Estado del servicio, modo de almacenamiento y conexión con Azure si aplica.
+  /transcription/upload:
+    post:
+      summary: Sube un archivo de audio o video y devuelve progreso por SSE.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - audio
+              properties:
+                audio:
+                  type: string
+                  format: binary
+      parameters:
+        - in: header
+          name: X-Groq-Api-Key
+          required: false
+          schema:
+            type: string
+          description: API key de Groq provista por el cliente.
+      responses:
+        "200":
+          description: Stream SSE con eventos status, complete o error.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Archivo faltante o invalido.
+        "413":
+          description: Archivo demasiado grande.
+  /transcription/cancel/{jobId}:
+    delete:
+      summary: Marca un trabajo activo como cancelado.
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Trabajo cancelado.
+        "404":
+          description: Trabajo no encontrado.
+  /youtube/analyze:
+    post:
+      summary: Analiza una URL de YouTube.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                forceType:
+                  type: string
+                  enum: [video, playlist]
+      responses:
+        "200":
+          description: Informacion del video o playlist.
+  /youtube/download:
+    get:
+      summary: Descarga audio o video desde YouTube.
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: format
+          required: false
+          schema:
+            type: string
+            enum: [audio, video]
+        - in: query
+          name: itag
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Archivo multimedia descargable.
+  /youtube/transcribe:
+    post:
+      summary: Descarga audio de YouTube y lo transcribe por SSE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+      parameters:
+        - in: header
+          name: X-Groq-Api-Key
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stream SSE con eventos status, complete o error.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /tts/generate:
+    post:
+      summary: Genera audio MP3 usando google-tts-api.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                lang:
+                  type: string
+                  default: es
+                speed:
+                  type: number
+                  default: 1
+      responses:
+        "200":
+          description: Audio MP3.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+  /tts/elevenlabs:
+    post:
+      summary: Genera audio MP3 con ElevenLabs.
+      parameters:
+        - in: header
+          name: X-Elevenlabs-Api-Key
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+      responses:
+        "200":
+          description: Audio MP3.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary

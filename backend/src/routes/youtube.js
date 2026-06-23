@@ -89,7 +89,7 @@ router.post('/transcribe', async (req, res) => {
     const fileSize = fs.statSync(localFilePath).size;
     const originalName = `youtube_audio_${jobId}.mp3`;
 
-    // 2. Subir audio descargado al historial de Azure (tal como lo pide el usuario)
+    // 2. Guardar audio descargado en almacenamiento temporal
     const originalBlobPath = `cargas/${jobId}/${originalName}`;
     await azureBlobService.subirArchivo(localFilePath, originalBlobPath, {
       mimetype: 'audio/mpeg',

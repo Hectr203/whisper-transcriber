@@ -243,7 +243,7 @@ export default function App() {
   return (
     <div className="min-h-screen w-full bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors duration-300">
       
-      {/* Navbar (Referencia AudioFlow) */}
+      {/* Navbar */}
       <header className="sticky top-0 z-40 bg-white/90 dark:bg-surface-dark backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -442,7 +442,7 @@ export default function App() {
                 <Globe className="text-tertiary-600 mb-4" size={28} />
                 <h3 className="font-bold text-lg text-secondary-900 dark:text-white mb-2">Multilingüe</h3>
                 <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
-                  Reconocimiento automático en más de 50 idiomas con corrección gramatical inteligente.
+                  Reconocimiento automático multilingüe para transformar voz en texto editable y reutilizable.
                 </p>
               </div>
               <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
@@ -454,9 +454,9 @@ export default function App() {
               </div>
               <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
                 <HistoryIcon className="text-slate-600 dark:text-slate-400 mb-4" size={28} />
-                <h3 className="font-bold text-lg text-secondary-900 dark:text-white mb-2">Auto-Guardado</h3>
+                <h3 className="font-bold text-lg text-secondary-900 dark:text-white mb-2">Historial Local</h3>
                 <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
-                  Tu progreso se sincroniza en la nube para que nunca pierdas una palabra importante.
+                  Tus transcripciones se guardan en este navegador para consultarlas sin crear cuentas.
                 </p>
               </div>
             </div>

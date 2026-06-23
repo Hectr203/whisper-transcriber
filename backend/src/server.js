@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3001;
 
 // Inicializar Azure Blob Storage
 azureBlobService.inicializar().catch(err => {
-  console.error('[Startup] No se pudo inicializar Azure Blob Storage. ¿Están las credenciales en .env?', err.message);
+  console.error('[Startup] No se pudo inicializar el almacenamiento temporal:', err.message);
 });
 
 // Validar entorno
@@ -27,7 +27,7 @@ if (!process.env.ELEVENLABS_API_KEY) {
   console.warn('⚠️  ADVERTENCIA: ELEVENLABS_API_KEY no está configurada en .env. El TTS con ElevenLabs requerirá que el cliente envíe su propia API Key.');
 }
 if (!process.env.AZURE_STORAGE_CONNECTION_STRING) {
-  console.warn('⚠️  ADVERTENCIA: AZURE_STORAGE_CONNECTION_STRING no está configurada en .env. El almacenamiento de archivos fallará.');
+  console.warn('⚠️  ADVERTENCIA: AZURE_STORAGE_CONNECTION_STRING no está configurada en .env. Se usará almacenamiento local temporal.');
 }
 
 // Configuración de CORS manual (para evitar problemas de preflight en Azure App Service)
@@ -76,6 +76,7 @@ app.post('/api/storage/cleanup', async (req, res) => {
 // Health check
 app.get('/api/health', async (req, res) => {
   let azureConnected = false;
+  const storage = azureBlobService.getStatus();
   try {
     if (azureBlobService.containerClient) {
       azureConnected = await azureBlobService.containerClient.exists();
@@ -86,6 +87,7 @@ app.get('/api/health', async (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    storage,
     azureBlobStorage: azureConnected ? 'connected' : 'disconnected'
   });
 });
@@ -118,5 +120,6 @@ app.listen(PORT, () => {
   console.log(`\n🎙️  Whisper Transcriber Backend`);
   console.log(`✅  Servidor corriendo en http://localhost:${PORT}`);
   console.log(`📁  Directorio temporal del OS: ${os.tmpdir()}`);
+  console.log(`💾  Almacenamiento temporal: ${azureBlobService.getStatus().mode}`);
   console.log(`🔑  API Key configurada: ${process.env.GROQ_API_KEY ? 'Sí' : 'NO - configura .env'}\n`);
 });

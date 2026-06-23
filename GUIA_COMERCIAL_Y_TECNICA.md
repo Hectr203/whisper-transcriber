@@ -25,6 +25,7 @@ Transcribir manualmente una reunion, clase, entrevista, video largo o nota de vo
 - Funciona con audio y video: si el archivo tiene video, extrae primero la pista de audio.
 - Da progreso visible: el flujo de transcripcion usa Server-Sent Events para mostrar etapas como subida, analisis, division, transcripcion y finalizacion.
 - Privacidad practica: el historial y las credenciales del usuario se guardan en el navegador mediante IndexedDB y localStorage; los archivos temporales del servidor se limpian al terminar.
+- Prueba local sin Azure: si Azure Blob Storage no esta configurado o falla, el backend usa carpetas temporales locales para no bloquear la experiencia de prueba.
 - Flexible en costos: puede usar claves propias del usuario o claves configuradas en el servidor como respaldo.
 - Incluye texto a voz: puede leer texto con SpeechSynthesis del navegador o generar audio remoto con ElevenLabs/Google TTS.
 - Es facil de desplegar en contenedores: hay Dockerfile para frontend y backend.
@@ -71,7 +72,8 @@ Servicios internos
   v
 Proveedores externos
   - Groq: transcripcion con Whisper
-  - Azure Blob Storage: archivos temporales
+- Azure Blob Storage: archivos temporales
+- Almacenamiento local temporal: fallback cuando Azure no esta configurado
   - ElevenLabs / Google TTS / Web Speech API: texto a voz
 ```
 
@@ -121,30 +123,67 @@ Voxelis es una aplicacion full stack de transcripcion y TTS construida con React
 - Escuchar textos largos con TTS para revision auditiva.
 - Crear una base interna para automatizaciones con voz.
 
+## Modelo comercial recomendado
+
+Para que Voxelis sea rentable, conviene venderlo como una herramienta de productividad con ahorro de tiempo medible, no como una simple demo tecnica de IA.
+
+- **Plan personal:** orientado a estudiantes, creadores y freelancers. Puede usar API keys propias del usuario para reducir costos operativos.
+- **Plan profesional:** incluye una cuota mensual con llaves del servidor, limites de uso, soporte basico y despliegue administrado.
+- **Plan para equipos:** agrega dominio propio, almacenamiento controlado, politicas de retencion, soporte prioritario y configuracion de Azure/Groq/ElevenLabs.
+- **Licencia white-label:** entrega del producto con marca del cliente, configuracion de infraestructura y capacitacion.
+
+La forma mas segura de empezar es vender instalacion/configuracion y soporte, porque el costo variable de transcripcion depende del proveedor de IA y del volumen de audio.
+
+## Paquetes sugeridos
+
+- **Starter:** instalacion local o en VPS, documentacion de uso, configuracion de API keys y entrenamiento corto.
+- **Creator:** Starter + flujo de YouTube, exportacion de textos, plantillas de prompts para resumenes y ajuste visual de marca.
+- **Business:** Creator + despliegue en Azure, dominio, HTTPS, backups de configuracion, limites de uso y monitoreo basico.
+- **Enterprise:** Business + privacidad reforzada, politicas de retencion, almacenamiento dedicado, secretos gestionados y soporte por SLA.
+
+## Checklist antes de venderlo
+
+- Confirmar una sola marca visible: `Voxelis`.
+- Configurar dominio, HTTPS y politicas de privacidad/terminos.
+- Definir limites claros de tamano, duracion y volumen mensual.
+- Probar con audios reales de los clientes objetivo: reuniones, clases, entrevistas y videos.
+- Medir tiempo promedio de procesamiento para poder prometer beneficios realistas.
+- Documentar costos por proveedor: Groq, Azure Storage, ElevenLabs y servidor.
+- Tener una respuesta clara para privacidad: que se guarda localmente, que se sube temporalmente y cuando se elimina.
+- Preparar una demo de 2 minutos: subir audio, ver progreso, copiar texto, exportar y reproducir con TTS.
+
+## Que evitar en promocion
+
+- No prometer precision perfecta: depende del audio, ruido, acento, idioma y calidad de grabacion.
+- No decir que el historial esta en la nube si no se implementan cuentas y almacenamiento remoto.
+- No prometer archivos ilimitados: hay limites de navegador, RAM, proveedor de IA y servidor.
+- No ofrecer costos fijos sin controlar cuotas, duracion maxima o API keys propias.
+- No venderlo como herramienta legal/medica certificada sin validaciones especificas.
+
 ## Observaciones importantes antes de promocionarlo
 
-- Unificar marca: el codigo muestra `Voxelis`, el README dice `AudioFlow` y el repositorio se llama `whisper-transcriber`.
-- Ajustar claims: el texto de la UI dice que el progreso se sincroniza "en la nube", pero el historial real se guarda en IndexedDB local.
-- README desactualizado: menciona `start.sh`, `azure.yaml` y documentos de Azure que actualmente aparecen eliminados en Git.
-- Endpoint documentado incorrecto: el README menciona `POST /api/transcription/transcribe`, pero el codigo usa `POST /api/transcription/upload`.
-- Puertos inconsistentes: README habla de 3003, `server.js` usa 3001 por defecto y `nginx.conf` proxyea a `backend:3002`.
-- TTS documentado distinto: README menciona `/api/tts/synthesize` y `/api/tts/voices`, pero el codigo expone `/api/tts/generate` y `/api/tts/elevenlabs`.
+- Marca unificada: la documentacion principal ya usa `Voxelis`. El nombre del repositorio puede mantenerse como nombre tecnico.
+- Claims ajustados: la interfaz debe hablar de historial local, no de sincronizacion en la nube, salvo que se implemente una cuenta/servidor para historial remoto.
+- README actualizado: debe mantenerse alineado con los endpoints reales y evitar referencias a archivos eliminados.
+- Puertos alineados: backend, ejemplos de entorno, Nginx y Docker deben apuntar a `3001` por defecto.
+- TTS documentado con rutas reales: `/api/tts/generate` y `/api/tts/elevenlabs`.
+- Imagenes Docker mas seguras: usar `.dockerignore` para no copiar `.env`, `node_modules`, builds locales ni archivos de prueba dentro de las imagenes.
+- Fallback local activo: el backend puede usar `backend/uploads` y `backend/temp` cuando Azure no esta configurado o falla.
 - Tests del backend: `npm test -- --runInBand` falla en este entorno por Jest 25/Node actual. Conviene actualizar Jest antes de usar esto como prueba de calidad.
 
 ## Mejoras recomendadas para motivar desarrolladores
 
-1. Crear un README tecnico actualizado con rutas reales, puertos reales, variables `.env` y flujo de arquitectura.
-2. Agregar `docker-compose.yml` para levantar frontend, backend y configuracion de red en un comando.
-3. Corregir el desalineamiento de puertos entre backend, Nginx y documentacion.
+1. Mantener el README tecnico actualizado con rutas reales, puertos reales, variables `.env` y flujo de arquitectura.
+2. Usar `docker-compose.yml` para levantar frontend, backend y configuracion de red en un comando.
+3. Mantener el contrato OpenAPI en `docs/openapi.yaml` para que otros desarrolladores entiendan y prueben los endpoints rapido.
 4. Actualizar Jest y dejar pruebas que corran en Node 20/22.
-5. Agregar OpenAPI/Swagger para que otros desarrolladores entiendan y prueben los endpoints rapido.
-6. Separar `processTranscription` en un servicio de dominio, no dentro de una ruta Express, para hacerlo reutilizable sin acoplarlo a HTTP.
-7. Agregar cola de trabajos para produccion, por ejemplo BullMQ/Redis o Azure Queue, si habra multiples usuarios procesando videos largos.
-8. Implementar politicas nativas de lifecycle en Azure Blob para reforzar la limpieza automatica de archivos temporales.
-9. Agregar limites por usuario/IP y validacion de duracion para controlar costos de Groq/ElevenLabs.
-10. Cifrar API keys locales o, mejor, permitir modo servidor con vault/secret manager para clientes empresariales.
-11. Agregar opcion de exportar Markdown, CSV, TXT y SRT/VTT si se quiere vender a creadores de contenido.
-12. Agregar timestamps y diarizacion como mejoras premium.
+5. Separar `processTranscription` en un servicio de dominio, no dentro de una ruta Express, para hacerlo reutilizable sin acoplarlo a HTTP.
+6. Agregar cola de trabajos para produccion, por ejemplo BullMQ/Redis o Azure Queue, si habra multiples usuarios procesando videos largos.
+7. Implementar politicas nativas de lifecycle en Azure Blob para reforzar la limpieza automatica de archivos temporales.
+8. Agregar limites por usuario/IP y validacion de duracion para controlar costos de Groq/ElevenLabs.
+9. Cifrar API keys locales o, mejor, permitir modo servidor con vault/secret manager para clientes empresariales.
+10. Agregar opcion de exportar CSV y SRT/VTT si se quiere vender a creadores de contenido.
+11. Agregar timestamps y diarizacion como mejoras premium.
 
 ## Fuentes utiles para sustentar ventajas
 
@@ -162,4 +201,3 @@ No lo vendas como "otro transcriptor". Vendelo como una herramienta de productiv
 El mensaje central debe ser:
 
 > Menos tiempo transcribiendo, mas tiempo usando la informacion.
-

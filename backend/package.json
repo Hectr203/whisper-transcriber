@@ -31,5 +31,13 @@
   "devDependencies": {
     "jest": "^25.0.0",
     "nodemon": "^3.1.4"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "uploads/**",
+      "temp/**",
+      "src/uploads/**",
+      "src/temp/**"
+    ]
   }
 }

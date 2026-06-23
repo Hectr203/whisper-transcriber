@@ -1,11 +1,12 @@
 const multer = require('multer');
-const os = require('os');
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { validarArchivo, ALLOWED_EXTENSIONS } = require('./validadorArchivos');
 
-// Para compatibilidad con Vercel/Serverless o entornos temporales
-const tempDir = os.tmpdir();
+// Carpeta local de subida inicial. Se puede cambiar a os.tmpdir() con UPLOADS_DIR.
+const tempDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', '..', 'uploads');
+fs.mkdirSync(tempDir, { recursive: true });
 const MAX_SIZE_BYTES = parseInt(process.env.MAX_FILE_SIZE_MB || process.env.AZURE_STORAGE_MAX_FILE_SIZE_MB || '1024') * 1024 * 1024;
 
 const storage = multer.diskStorage({

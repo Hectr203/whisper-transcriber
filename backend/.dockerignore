@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+coverage
+uploads
+temp
+src/uploads
+src/temp
+test.mp3
+test.txt

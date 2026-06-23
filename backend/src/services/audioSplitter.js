@@ -7,12 +7,11 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-const os = require('os');
-
 const WHISPER_MAX_MB = 24; // Dejamos margen del límite de 25MB de la API
 const CHUNK_DURATION_SECONDS = 600; // 10 minutos por chunk (seguro para la mayoría de audios)
 
-const tempDir = os.tmpdir();
+const tempDir = process.env.TEMP_DIR || path.join(__dirname, '..', '..', 'temp');
+fs.mkdirSync(tempDir, { recursive: true });
 
 /**
  * Obtiene la duración y si tiene video

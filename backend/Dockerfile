@@ -11,7 +11,7 @@ RUN npm ci --only=production
 COPY . .
 
 # Crear directorios para archivos temporales
-RUN mkdir -p src/uploads src/temp
+RUN mkdir -p uploads temp
 
 EXPOSE 3001
 

@@ -54,11 +54,11 @@ router.post('/upload', (req, res, next) => {
     try {
       sendEvent('status', {
         stage: 'uploading',
-        message: 'Subiendo archivo a almacenamiento seguro...',
+        message: 'Guardando archivo en almacenamiento temporal...',
         progress: 2,
       });
 
-      // 1. Subir archivo original a Azure Blob Storage
+      // 1. Guardar archivo original en Azure Blob Storage o fallback local
       originalBlobPath = `cargas/${jobId}/${req.file.originalname}`;
       await azureBlobService.subirArchivo(req.file.path, originalBlobPath, {
         mimetype: req.file.mimetype,
@@ -89,10 +89,10 @@ router.post('/upload', (req, res, next) => {
         if (!res.writableEnded) res.end();
       });
 
-    } catch (azureError) {
-      console.error('[Route] Error subiendo a Azure:', azureError);
+    } catch (storageError) {
+      console.error('[Route] Error guardando archivo temporal:', storageError);
       sendEvent('error', {
-        message: 'Error al subir el archivo al almacenamiento seguro.',
+        message: 'Error al guardar el archivo en almacenamiento temporal.',
         code: 'STORAGE_ERROR'
       });
       cleanupLocal(req.file.path);
@@ -135,7 +135,7 @@ async function processTranscription({ localFilePath, originalBlobPath, originalN
       });
       audioToProcessLocal = await extractAudioIfVideo(localFilePath);
       
-      // Subir el audio extraído a Blob Storage
+      // Guardar el audio extraído en almacenamiento temporal
       const extractedBlobPath = `temporales/${jobId}/audio_extraido.mp3`;
       await azureBlobService.subirArchivo(audioToProcessLocal, extractedBlobPath, { jobId });
     }
@@ -168,7 +168,7 @@ async function processTranscription({ localFilePath, originalBlobPath, originalN
 
     if (getJob()?.cancelled) throw new Error('Trabajo cancelado por el cliente');
 
-    // Subir chunks locales a Azure Blob Storage
+    // Guardar chunks locales en almacenamiento temporal
     const chunkBlobPaths = [];
     for (let i = 0; i < chunkPaths.length; i++) {
       const chunkLocalPath = chunkPaths[i];
@@ -233,13 +233,13 @@ async function processTranscription({ localFilePath, originalBlobPath, originalN
     if (audioToProcessLocal !== localFilePath) cleanupLocal(audioToProcessLocal);
     cleanupChunks(chunkPaths, audioToProcessLocal !== localFilePath ? audioToProcessLocal : null);
     
-    // 2. Eliminar blobs generados en Azure Blob Storage (limpieza segura)
-    console.log(`[Process] Limpiando blobs de Azure para el job ${jobId}...`);
+    // 2. Eliminar archivos temporales remotos/locales
+    console.log(`[Process] Limpiando almacenamiento temporal para el job ${jobId}...`);
     try {
       await azureBlobService.eliminarPorPrefijo(`cargas/${jobId}/`);
       await azureBlobService.eliminarPorPrefijo(`temporales/${jobId}/`);
     } catch (e) {
-      console.warn(`[Process] Fallo parcial en limpieza de Azure Blob:`, e.message);
+      console.warn(`[Process] Fallo parcial en limpieza de almacenamiento temporal:`, e.message);
     }
 
     // 3. Cerrar SSE
