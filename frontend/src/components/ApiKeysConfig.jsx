@@ -4,13 +4,16 @@ import { Key, Save, Trash2, ShieldCheck, X } from 'lucide-react';
 export default function ApiKeysConfig({ onClose }) {
   const [groqKey, setGroqKey] = useState('');
   const [elevenLabsKey, setElevenLabsKey] = useState('');
+  const [openAiKey, setOpenAiKey] = useState('');
   
   const [savedGroq, setSavedGroq] = useState(false);
   const [savedElevenLabs, setSavedElevenLabs] = useState(false);
+  const [savedOpenAi, setSavedOpenAi] = useState(false);
 
   useEffect(() => {
     const currentGroq = localStorage.getItem('groqApiKey');
     const currentEleven = localStorage.getItem('elevenLabsApiKey');
+    const currentOpenAi = localStorage.getItem('openAiApiKey');
     
     if (currentGroq) {
       setGroqKey(currentGroq);
@@ -19,6 +22,10 @@ export default function ApiKeysConfig({ onClose }) {
     if (currentEleven) {
       setElevenLabsKey(currentEleven);
       setSavedElevenLabs(true);
+    }
+    if (currentOpenAi) {
+      setOpenAiKey(currentOpenAi);
+      setSavedOpenAi(true);
     }
   }, []);
 
@@ -38,15 +45,26 @@ export default function ApiKeysConfig({ onClose }) {
       localStorage.removeItem('elevenLabsApiKey');
       setSavedElevenLabs(false);
     }
+
+    if (openAiKey.trim()) {
+      localStorage.setItem('openAiApiKey', openAiKey.trim());
+      setSavedOpenAi(true);
+    } else {
+      localStorage.removeItem('openAiApiKey');
+      setSavedOpenAi(false);
+    }
   };
 
   const handleClear = () => {
     localStorage.removeItem('groqApiKey');
     localStorage.removeItem('elevenLabsApiKey');
+    localStorage.removeItem('openAiApiKey');
     setGroqKey('');
     setElevenLabsKey('');
+    setOpenAiKey('');
     setSavedGroq(false);
     setSavedElevenLabs(false);
+    setSavedOpenAi(false);
   };
 
   return (
@@ -72,7 +90,7 @@ export default function ApiKeysConfig({ onClose }) {
 
         <div className="mb-5">
           <label className="flex items-center gap-2 mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-            Groq API Key (Whisper)
+            Groq API Key (Whisper, IA Predeterminada)
             {savedGroq && <ShieldCheck size={16} className="text-green-500" />}
           </label>
           <input 
@@ -80,6 +98,20 @@ export default function ApiKeysConfig({ onClose }) {
             value={groqKey}
             onChange={(e) => { setGroqKey(e.target.value); setSavedGroq(false); }}
             placeholder="gsk_..."
+            className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all font-mono"
+          />
+        </div>
+
+        <div className="mb-5">
+          <label className="flex items-center gap-2 mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            OpenAI API Key (ChatGPT)
+            {savedOpenAi && <ShieldCheck size={16} className="text-green-500" />}
+          </label>
+          <input 
+            type="password"
+            value={openAiKey}
+            onChange={(e) => { setOpenAiKey(e.target.value); setSavedOpenAi(false); }}
+            placeholder="sk-..."
             className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all font-mono"
           />
         </div>

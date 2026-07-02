@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, Settings, Globe, Zap, Cloud, Menu, History as HistoryIcon } from 'lucide-react';
+import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, Settings, Globe, Zap, Cloud, Menu, History as HistoryIcon, Sparkles } from 'lucide-react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
@@ -29,6 +29,13 @@ export default function App() {
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [autoImprove, setAutoImprove] = useState(false);
+  const [improveMode, setImproveMode] = useState('mejorar_texto');
+  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('aiProvider') || 'groq');
+
+  useEffect(() => {
+    localStorage.setItem('aiProvider', aiProvider);
+  }, [aiProvider]);
 
   const eventSourceRef = useRef(null);
 
@@ -198,7 +205,45 @@ export default function App() {
               if (currentEvent === 'status') {
                 setStatus(data);
               } else if (currentEvent === 'complete') {
-                setStatus({ stage: 'complete', message: 'Transcripción completada', progress: 100 });
+                if (autoImprove) {
+                  setStatus({ stage: 'improving', message: improveMode === 'mejorar_texto' ? 'Mejorando la redacción del texto...' : 'Estructurando y mejorando el prompt...', progress: 100 });
+                  
+                  try {
+                    const headers = { 'Content-Type': 'application/json' };
+                    const groqKey = localStorage.getItem('groqApiKey');
+                    const openAiKey = localStorage.getItem('openAiApiKey');
+                    if (groqKey) headers['x-groq-api-key'] = groqKey;
+                    if (openAiKey) headers['x-openai-api-key'] = openAiKey;
+
+                    const improveRes = await fetch(`${API_BASE}/improve`, {
+                      method: 'POST',
+                      headers,
+                      body: JSON.stringify({ text: data.transcription, operation: improveMode, provider: aiProvider })
+                    });
+                    
+                    if (improveRes.ok) {
+                      const improveData = await improveRes.json();
+                      data.transcription = improveData.result;
+                      data.improved = true;
+                      setStatus({ stage: 'complete', message: 'Mejora completada', progress: 100 });
+                    } else {
+                      const errData = await improveRes.json().catch(() => ({}));
+                      if (errData.message && errData.message.includes('MISSING_API_KEY')) {
+                        setShowApiKeys(true);
+                        setStatus({ stage: 'complete', message: 'Transcripción completada (Falta API Key de ChatGPT)', progress: 100 });
+                      } else {
+                        console.error('Error en mejora automática:', errData);
+                        setStatus({ stage: 'complete', message: 'Transcripción completada (Error al mejorar)', progress: 100 });
+                      }
+                    }
+                  } catch (err) {
+                    console.error('Error de red en mejora automática:', err);
+                    setStatus({ stage: 'complete', message: 'Transcripción completada (Error de red al mejorar)', progress: 100 });
+                  }
+                } else {
+                  setStatus({ stage: 'complete', message: 'Transcripción completada', progress: 100 });
+                }
+
                 setResult(data);
                 setIsProcessing(false);
                 
@@ -230,7 +275,7 @@ export default function App() {
       baseHistoryItem.errorMessage = err.message || 'Error desconocido';
       saveHistoryItem(baseHistoryItem).then(loadHistory);
     }
-  }, [file, isProcessing, currentHistoryId]);
+  }, [file, isProcessing, currentHistoryId, autoImprove, improveMode, aiProvider]);
 
   const handleCancel = useCallback(() => {
     if (eventSourceRef.current) eventSourceRef.current.close();
@@ -502,6 +547,80 @@ export default function App() {
             </div>
           )}
 
+          {/* Opciones de procesamiento automático */}
+          {file && !result && !isProcessing && (
+            <div className="max-w-2xl mx-auto mt-6 p-5 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <Sparkles size={18} className="text-primary-500" /> Mejora Automática con IA
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Procesar la transcripción automáticamente al finalizar.
+                  </p>
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${autoImprove ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <input 
+                      type="checkbox" 
+                      checked={autoImprove} 
+                      onChange={(e) => setAutoImprove(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoImprove ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+                </label>
+              </div>
+
+              {autoImprove && (
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 animate-fade-in flex flex-col gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">Modelo de IA</label>
+                    <select 
+                      value={aiProvider} 
+                      onChange={(e) => setAiProvider(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all cursor-pointer"
+                    >
+                      <option value="groq">Groq (Llama 3, Rápido)</option>
+                      <option value="chatgpt">ChatGPT (OpenAI)</option>
+                      <option value="ollama">Ollama (Local)</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-4">
+                    <label className="flex-1 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="improveMode" 
+                      value="mejorar_texto"
+                      checked={improveMode === 'mejorar_texto'}
+                      onChange={() => setImproveMode('mejorar_texto')}
+                      className="peer sr-only"
+                    />
+                    <div className="p-3 border rounded-xl text-center transition-all peer-checked:bg-primary-50 peer-checked:border-primary-500 peer-checked:text-primary-700 dark:peer-checked:bg-primary-900/20 dark:peer-checked:border-primary-500 dark:peer-checked:text-primary-400 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <span className="block text-sm font-bold mb-1">Mejorar texto</span>
+                      <span className="block text-xs opacity-80">Corrige redacción y ortografía</span>
+                    </div>
+                  </label>
+                  <label className="flex-1 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="improveMode" 
+                      value="mejorar_prompt"
+                      checked={improveMode === 'mejorar_prompt'}
+                      onChange={() => setImproveMode('mejorar_prompt')}
+                      className="peer sr-only"
+                    />
+                    <div className="p-3 border rounded-xl text-center transition-all peer-checked:bg-primary-50 peer-checked:border-primary-500 peer-checked:text-primary-700 dark:peer-checked:bg-primary-900/20 dark:peer-checked:border-primary-500 dark:peer-checked:text-primary-400 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+                      <span className="block text-sm font-bold mb-1">Mejorar prompt</span>
+                      <span className="block text-xs opacity-80">Estructura para IA</span>
+                    </div>
+                  </label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Botón transcribir */}
           {file && !result && !isProcessing && (
             <div className="flex justify-center mt-8">
@@ -556,6 +675,9 @@ export default function App() {
                 initialMetadata={result}
                 onReset={reset}
                 showReset={true}
+                aiProvider={aiProvider}
+                setAiProvider={setAiProvider}
+                onRequestApiKeys={() => setShowApiKeys(true)}
               />
             </div>
           )}
@@ -566,6 +688,9 @@ export default function App() {
           <TextEditorTTS 
             initialText="" 
             showReset={false}
+            aiProvider={aiProvider}
+            setAiProvider={setAiProvider}
+            onRequestApiKeys={() => setShowApiKeys(true)}
           />
         </div>
 

@@ -61,6 +61,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/transcription', transcriptionRoutes);
 app.use('/api/tts', ttsRoutes);
 app.use('/api/youtube', youtubeRoutes);
+app.use('/api/improve', require('./routes/improve'));
 
 // Endpoint manual de limpieza para cron jobs (opcional)
 app.post('/api/storage/cleanup', async (req, res) => {

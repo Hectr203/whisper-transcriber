@@ -20,12 +20,23 @@ const WordToken = React.memo(({ token, isActive, onClick }) => {
   );
 });
 
-export default function TextEditorTTS({ initialText = '', onReset, showReset = false, initialMetadata = null }) {
+export default function TextEditorTTS({ 
+  initialText = '', 
+  isProcessing = false, 
+  status = null, 
+  onReset = null, 
+  showReset = true,
+  initialMetadata = null,
+  aiProvider = 'groq',
+  setAiProvider = () => {},
+  onRequestApiKeys = () => {}
+}) {
   const [text, setText] = useState(initialText);
   const [copied, setCopied] = useState(false);
   const [playState, setPlayState] = useState('idle'); 
   const [speed, setSpeed] = useState(1);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isImproving, setIsImproving] = useState(false);
   
   const speedRef = useRef(1);
   const isPausedRef = useRef(false);
@@ -452,6 +463,47 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
     URL.revokeObjectURL(url);
   };
 
+  const handleImprove = async (mode) => {
+    if (!text.trim()) {
+      alert("El texto está vacío.");
+      return;
+    }
+    
+    try {
+      setIsImproving(true);
+      
+      const headers = { 'Content-Type': 'application/json' };
+      const groqKey = localStorage.getItem('groqApiKey');
+      const openAiKey = localStorage.getItem('openAiApiKey');
+      if (groqKey) headers['x-groq-api-key'] = groqKey;
+      if (openAiKey) headers['x-openai-api-key'] = openAiKey;
+
+      const res = await fetch(`${API_BASE}/improve`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ text, operation: mode, provider: aiProvider })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setText(data.result);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        if (errData.message && errData.message.includes('MISSING_API_KEY')) {
+          onRequestApiKeys();
+          alert("Por favor configura tu API Key de OpenAI para usar ChatGPT.");
+        } else {
+          alert("Error al mejorar el texto: " + (errData.message || errData.error || "Desconocido"));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Ocurrió un error de red al intentar mejorar el texto.");
+    } finally {
+      setIsImproving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
       
@@ -473,20 +525,20 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             
             <div className="flex flex-wrap gap-2 items-center justify-between">
                <div className="flex gap-2">
-                 <button onClick={() => setText('')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-600 dark:text-slate-400 rounded-lg transition-colors">
-                   <Trash2 size={14} /> Limpiar
-                 </button>
-                 <button onClick={handleCopy} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-lg transition-colors ${copied ? 'text-green-600 border-green-200 bg-green-50' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                   {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copiado' : 'Copiar'}
-                 </button>
-               </div>
-
-               <div className="flex gap-2">
                  <button onClick={() => handleDownloadText('txt')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg transition-colors shadow-sm" title="Descargar como TXT">
                    <Download size={14} /> TXT
                  </button>
                  <button onClick={() => handleDownloadText('md')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg transition-colors shadow-sm" title="Descargar como Markdown">
                    <Download size={14} /> MD
+                 </button>
+               </div>
+
+               <div className="flex gap-2">
+                 <button onClick={() => setText('')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-600 dark:text-slate-400 rounded-lg transition-colors">
+                   <Trash2 size={14} /> Limpiar
+                 </button>
+                 <button onClick={handleCopy} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-lg transition-colors ${copied ? 'text-green-600 border-green-200 bg-green-50' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                   {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Copiado' : 'Copiar'}
                  </button>
                  {showReset && onReset && (
                     <button onClick={onReset} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-800/50 hover:bg-primary-100 dark:hover:bg-primary-900/40 rounded-lg transition-colors" title="Nueva transcripción">
@@ -561,6 +613,46 @@ export default function TextEditorTTS({ initialText = '', onReset, showReset = f
             
             {/* Decorative background circle */}
             <div className="absolute right-[-10%] top-[-10%] w-48 h-48 bg-white opacity-5 rounded-full blur-2xl pointer-events-none"></div>
+          </div>
+
+          {/* Card: Acciones de IA */}
+          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+            <h4 className="flex items-center gap-2 font-bold text-secondary-900 dark:text-white mb-4">
+              <Sparkles size={18} className="text-primary-600 dark:text-primary-400" /> Asistente IA
+            </h4>
+
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">Modelo</label>
+              <select 
+                value={aiProvider} 
+                onChange={(e) => setAiProvider(e.target.value)}
+                className="w-full px-3 py-2 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50 transition-all cursor-pointer"
+              >
+                <option value="groq">Groq (Llama 3, Rápido)</option>
+                <option value="chatgpt">ChatGPT (OpenAI)</option>
+                <option value="ollama">Ollama (Local)</option>
+              </select>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={() => handleImprove('mejorar_texto')}
+                disabled={isImproving || !text.trim()}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:border-primary-300 dark:hover:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-900/20 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+              >
+                {isImproving ? <Loader size={16} className="animate-spin" /> : <CheckCircle size={16} className="text-primary-500" />} 
+                Mejorar Texto
+              </button>
+              
+              <button 
+                onClick={() => handleImprove('mejorar_prompt')}
+                disabled={isImproving || !text.trim()}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 hover:border-primary-300 dark:hover:border-primary-700 hover:bg-primary-50 dark:hover:bg-primary-900/20 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+              >
+                {isImproving ? <Loader size={16} className="animate-spin" /> : <FileText size={16} className="text-primary-500" />} 
+                Mejorar Prompt
+              </button>
+            </div>
           </div>
 
           {/* Card: Configuración de Voz */}
