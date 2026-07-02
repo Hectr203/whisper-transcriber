@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles, User, Settings2, Trash2 } from 'lucide-react';
 import { generateHash, getTTSAudio, saveTTSAudio } from '../utils/historyStorage';
 
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const WordToken = React.memo(({ token, isActive, onClick }) => {
@@ -32,6 +35,7 @@ export default function TextEditorTTS({
   onRequestApiKeys = () => {}
 }) {
   const [text, setText] = useState(initialText);
+  const [isMarkdownMode, setIsMarkdownMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [playState, setPlayState] = useState('idle'); 
   const [speed, setSpeed] = useState(1);
@@ -43,6 +47,7 @@ export default function TextEditorTTS({
   const [activeCharIndex, setActiveCharIndex] = useState(-1);
   const utteranceRef = useRef(null);
   const audioRef = useRef(null);
+  const markdownRef = useRef(null);
 
   const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [useAITTS, setUseAITTS] = useState(() => localStorage.getItem('useAITTS') === 'true');
@@ -146,6 +151,63 @@ export default function TextEditorTTS({
     return result;
   }, [text, tokens]);
 
+  // Encuentra el índice de la palabra activa actual
+  const activeTokenIndex = useMemo(() => {
+    if (activeCharIndex < 0) return -1;
+    let idx = tokens.findIndex(t => activeCharIndex >= t.charIndex && activeCharIndex < (t.charIndex + t.length));
+    if (idx === -1) {
+       idx = tokens.findIndex(t => t.charIndex > activeCharIndex);
+       if (idx > 0) return idx - 1;
+       if (idx === -1 && tokens.length > 0) return tokens.length - 1;
+    }
+    return idx;
+  }, [activeCharIndex, tokens]);
+
+  // Efecto para resaltar la palabra en modo Markdown usando CSS Custom Highlight API
+  useEffect(() => {
+    if (!window.CSS || !CSS.highlights) return; // Fallback si no está soportado (Chrome 105+, Safari 17.2+, Firefox 126+)
+    
+    if (!isMarkdownMode || activeTokenIndex === -1 || !markdownRef.current) {
+      CSS.highlights.delete('tts-highlight');
+      return;
+    }
+
+    const container = markdownRef.current;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    let currentWordIndex = 0;
+    let node;
+    const regex = /([\wáéíóúüñÁÉÍÓÚÜÑ]+)/g;
+    let found = false;
+    
+    while ((node = walker.nextNode())) {
+      let match;
+      while ((match = regex.exec(node.nodeValue)) !== null) {
+        if (currentWordIndex === activeTokenIndex) {
+          const range = new Range();
+          range.setStart(node, match.index);
+          range.setEnd(node, match.index + match[0].length);
+          const highlight = new Highlight(range);
+          CSS.highlights.set('tts-highlight', highlight);
+          found = true;
+          break;
+        }
+        currentWordIndex++;
+      }
+      if (found) break;
+    }
+    
+    if (!found) {
+      CSS.highlights.delete('tts-highlight');
+    }
+    
+    // Si la lectura va avanzando, intentamos hacer scroll hacia la palabra resaltada
+    if (found && container) {
+      // Como CSS.highlights no nos da el elemento fácilmente, podemos aproximar el scroll usando el contenedor
+      // Esto es complejo sin mutar el DOM, pero al menos el usuario verá el highlight en la ventana.
+    }
+    
+  }, [activeTokenIndex, isMarkdownMode]);
+
   const jumpToOffset = (offset) => {
     playFrom(offset);
   };
@@ -160,11 +222,21 @@ export default function TextEditorTTS({
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     isPausedRef.current = false;
 
-    const sliceBuffer = text.substring(offsetIndex);
-    if (!sliceBuffer.trim()) {
+    const rawSlice = text.substring(offsetIndex);
+    if (!rawSlice.trim()) {
       setPlayState('idle');
       setActiveCharIndex(-1);
       return;
+    }
+
+    let sliceBuffer = rawSlice;
+    if (isMarkdownMode) {
+      // Si estamos en modo markdown, limpiamos el texto para que la lectura sea natural
+      sliceBuffer = sliceBuffer
+        .replace(/[#*`_~]/g, '')
+        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+        .trim();
+      if (!sliceBuffer) sliceBuffer = rawSlice; // fallback
     }
 
     if (useAITTS) {
@@ -228,7 +300,7 @@ export default function TextEditorTTS({
         audio.ontimeupdate = () => {
           if (audio.duration) {
              const progress = audio.currentTime / audio.duration;
-             const estimatedCharIndex = Math.floor(sliceBuffer.length * progress);
+             const estimatedCharIndex = Math.floor(rawSlice.length * progress);
              setActiveCharIndex(offsetIndex + estimatedCharIndex);
           }
         };
@@ -312,7 +384,7 @@ export default function TextEditorTTS({
           elapsedMs += delta;
           const estimatedChar = Math.floor((elapsedMs / 1000) * charsPerSec);
           
-          if (estimatedChar < sliceBuffer.length) {
+          if (estimatedChar < rawSlice.length) {
              setActiveCharIndex((prev) => {
                if (prev > offsetIndex + estimatedChar + 10) return prev;
                return offsetIndex + estimatedChar;
@@ -545,12 +617,32 @@ export default function TextEditorTTS({
                       <RotateCcw size={14} /> Nueva
                     </button>
                  )}
+                 <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                 <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-600 dark:text-slate-400 select-none">
+                   <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${isMarkdownMode ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                     <input 
+                       type="checkbox" 
+                       checked={isMarkdownMode} 
+                       onChange={(e) => setIsMarkdownMode(e.target.checked)}
+                       className="sr-only"
+                     />
+                     <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${isMarkdownMode ? 'translate-x-4' : 'translate-x-1'}`} />
+                   </div>
+                   Vista Markdown
+                 </label>
                </div>
             </div>
           </div>
           
           <div className="flex-1 min-h-0 relative">
-            {playState !== 'idle' ? (
+            {isMarkdownMode ? (
+              <div 
+                ref={markdownRef}
+                className="absolute inset-0 p-4 w-full h-full overflow-y-auto text-slate-800 dark:text-slate-200 prose prose-sm sm:prose-base prose-slate dark:prose-invert max-w-none bg-transparent"
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+              </div>
+            ) : playState !== 'idle' ? (
               <div className="absolute inset-0 p-4 overflow-y-auto text-slate-800 dark:text-slate-200 text-lg leading-loose font-sans bg-transparent whitespace-pre-wrap">
                 {parsedElements.map((el) => {
                    if (el.type === 'text') return <span key={el.key} className="opacity-70">{el.val}</span>;
