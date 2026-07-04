@@ -31,7 +31,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [autoImprove, setAutoImprove] = useState(false);
   const [improveMode, setImproveMode] = useState('mejorar_texto');
-  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('aiProvider') || 'groq');
+  const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('aiProvider') || 'nvidia');
 
   useEffect(() => {
     localStorage.setItem('aiProvider', aiProvider);
@@ -211,9 +211,9 @@ export default function App() {
                   try {
                     const headers = { 'Content-Type': 'application/json' };
                     const groqKey = localStorage.getItem('groqApiKey');
-                    const openAiKey = localStorage.getItem('openAiApiKey');
+                    const nvidiaKey = localStorage.getItem('nvidiaApiKey');
                     if (groqKey) headers['x-groq-api-key'] = groqKey;
-                    if (openAiKey) headers['x-openai-api-key'] = openAiKey;
+                    if (nvidiaKey) headers['x-nvidia-api-key'] = nvidiaKey;
 
                     const improveRes = await fetch(`${API_BASE}/improve`, {
                       method: 'POST',
@@ -230,7 +230,7 @@ export default function App() {
                       const errData = await improveRes.json().catch(() => ({}));
                       if (errData.message && errData.message.includes('MISSING_API_KEY')) {
                         setShowApiKeys(true);
-                        setStatus({ stage: 'complete', message: 'Transcripción completada (Falta API Key de ChatGPT)', progress: 100 });
+                        setStatus({ stage: 'complete', message: 'Transcripción completada (Falta API Key de NVIDIA)', progress: 100 });
                       } else {
                         console.error('Error en mejora automática:', errData);
                         setStatus({ stage: 'complete', message: 'Transcripción completada (Error al mejorar)', progress: 100 });
@@ -582,7 +582,7 @@ export default function App() {
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all cursor-pointer"
                     >
                       <option value="groq">Groq (Llama 3, Rápido)</option>
-                      <option value="chatgpt">ChatGPT (OpenAI)</option>
+                      <option value="nvidia">NVIDIA (GLM-5.2)</option>
                       <option value="ollama">Ollama (Local)</option>
                     </select>
                   </div>

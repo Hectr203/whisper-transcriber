@@ -4,16 +4,16 @@ import { Key, Save, Trash2, ShieldCheck, X } from 'lucide-react';
 export default function ApiKeysConfig({ onClose }) {
   const [groqKey, setGroqKey] = useState('');
   const [elevenLabsKey, setElevenLabsKey] = useState('');
-  const [openAiKey, setOpenAiKey] = useState('');
+  const [nvidiaKey, setNvidiaKey] = useState('');
   
   const [savedGroq, setSavedGroq] = useState(false);
   const [savedElevenLabs, setSavedElevenLabs] = useState(false);
-  const [savedOpenAi, setSavedOpenAi] = useState(false);
+  const [savedNvidia, setSavedNvidia] = useState(false);
 
   useEffect(() => {
     const currentGroq = localStorage.getItem('groqApiKey');
     const currentEleven = localStorage.getItem('elevenLabsApiKey');
-    const currentOpenAi = localStorage.getItem('openAiApiKey');
+    const currentNvidia = localStorage.getItem('nvidiaApiKey');
     
     if (currentGroq) {
       setGroqKey(currentGroq);
@@ -23,9 +23,9 @@ export default function ApiKeysConfig({ onClose }) {
       setElevenLabsKey(currentEleven);
       setSavedElevenLabs(true);
     }
-    if (currentOpenAi) {
-      setOpenAiKey(currentOpenAi);
-      setSavedOpenAi(true);
+    if (currentNvidia) {
+      setNvidiaKey(currentNvidia);
+      setSavedNvidia(true);
     }
   }, []);
 
@@ -46,25 +46,25 @@ export default function ApiKeysConfig({ onClose }) {
       setSavedElevenLabs(false);
     }
 
-    if (openAiKey.trim()) {
-      localStorage.setItem('openAiApiKey', openAiKey.trim());
-      setSavedOpenAi(true);
+    if (nvidiaKey.trim()) {
+      localStorage.setItem('nvidiaApiKey', nvidiaKey.trim());
+      setSavedNvidia(true);
     } else {
-      localStorage.removeItem('openAiApiKey');
-      setSavedOpenAi(false);
+      localStorage.removeItem('nvidiaApiKey');
+      setSavedNvidia(false);
     }
   };
 
   const handleClear = () => {
     localStorage.removeItem('groqApiKey');
     localStorage.removeItem('elevenLabsApiKey');
-    localStorage.removeItem('openAiApiKey');
+    localStorage.removeItem('nvidiaApiKey');
     setGroqKey('');
     setElevenLabsKey('');
-    setOpenAiKey('');
+    setNvidiaKey('');
     setSavedGroq(false);
     setSavedElevenLabs(false);
-    setSavedOpenAi(false);
+    setSavedNvidia(false);
   };
 
   return (
@@ -104,14 +104,14 @@ export default function ApiKeysConfig({ onClose }) {
 
         <div className="mb-5">
           <label className="flex items-center gap-2 mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-            OpenAI API Key (ChatGPT)
-            {savedOpenAi && <ShieldCheck size={16} className="text-green-500" />}
+            NVIDIA API Key
+            {savedNvidia && <ShieldCheck size={16} className="text-green-500" />}
           </label>
           <input 
             type="password"
-            value={openAiKey}
-            onChange={(e) => { setOpenAiKey(e.target.value); setSavedOpenAi(false); }}
-            placeholder="sk-..."
+            value={nvidiaKey}
+            onChange={(e) => { setNvidiaKey(e.target.value); setSavedNvidia(false); }}
+            placeholder="nvapi-..."
             className="w-full px-4 py-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all font-mono"
           />
         </div>

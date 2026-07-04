@@ -9,7 +9,7 @@ router.post('/', async (req, res) => {
     // Extraer llaves pasadas desde el frontend si existen
     const clientKeys = {
       groq: req.headers['x-groq-api-key'],
-      chatgpt: req.headers['x-openai-api-key']
+      nvidia: req.headers['x-nvidia-api-key'] || req.headers['x-openai-api-key']
     };
 
     if (!text || text.trim() === '') {
@@ -24,7 +24,8 @@ router.post('/', async (req, res) => {
       return res.status(413).json({ error: 'El texto es demasiado largo para ser procesado' });
     }
 
-    const improvedText = await improveContent(text, operation, provider, clientKeys);
+    const finalProvider = provider === 'chatgpt' ? 'nvidia' : provider;
+    const improvedText = await improveContent(text, operation, finalProvider, clientKeys);
 
     res.json({
       success: true,

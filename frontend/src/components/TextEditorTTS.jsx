@@ -30,7 +30,7 @@ export default function TextEditorTTS({
   onReset = null, 
   showReset = true,
   initialMetadata = null,
-  aiProvider = 'groq',
+  aiProvider = 'nvidia',
   setAiProvider = () => {},
   onRequestApiKeys = () => {}
 }) {
@@ -546,9 +546,9 @@ export default function TextEditorTTS({
       
       const headers = { 'Content-Type': 'application/json' };
       const groqKey = localStorage.getItem('groqApiKey');
-      const openAiKey = localStorage.getItem('openAiApiKey');
+      const nvidiaKey = localStorage.getItem('nvidiaApiKey');
       if (groqKey) headers['x-groq-api-key'] = groqKey;
-      if (openAiKey) headers['x-openai-api-key'] = openAiKey;
+      if (nvidiaKey) headers['x-nvidia-api-key'] = nvidiaKey;
 
       const res = await fetch(`${API_BASE}/improve`, {
         method: 'POST',
@@ -563,7 +563,7 @@ export default function TextEditorTTS({
         const errData = await res.json().catch(() => ({}));
         if (errData.message && errData.message.includes('MISSING_API_KEY')) {
           onRequestApiKeys();
-          alert("Por favor configura tu API Key de OpenAI para usar ChatGPT.");
+          alert("Por favor configura tu API Key de NVIDIA para usar el asistente.");
         } else {
           alert("Error al mejorar el texto: " + (errData.message || errData.error || "Desconocido"));
         }
@@ -721,7 +721,7 @@ export default function TextEditorTTS({
                 className="w-full px-3 py-2 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50 transition-all cursor-pointer"
               >
                 <option value="groq">Groq (Llama 3, Rápido)</option>
-                <option value="chatgpt">ChatGPT (OpenAI)</option>
+                <option value="nvidia">NVIDIA (GLM-5.2)</option>
                 <option value="ollama">Ollama (Local)</option>
               </select>
             </div>
