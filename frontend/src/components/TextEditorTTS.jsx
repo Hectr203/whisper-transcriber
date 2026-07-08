@@ -38,11 +38,11 @@ export default function TextEditorTTS({
   const [isMarkdownMode, setIsMarkdownMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [playState, setPlayState] = useState('idle'); 
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(2);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isImproving, setIsImproving] = useState(false);
   
-  const speedRef = useRef(1);
+  const speedRef = useRef(2);
   const isPausedRef = useRef(false);
   const [activeCharIndex, setActiveCharIndex] = useState(-1);
   const utteranceRef = useRef(null);
@@ -577,13 +577,13 @@ export default function TextEditorTTS({
   };
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
+    <div className="flex flex-col gap-6 animate-fade-in h-full min-h-0">
       
       {/* 2-Column Layout Grid */}
-      <div className="flex flex-col lg:flex-row gap-6 items-stretch">
+      <div className="flex flex-col lg:flex-row gap-6 items-stretch h-full min-h-0">
         
         {/* Left Column: Editor */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow h-[400px] lg:h-auto lg:min-h-[400px]">
+        <div className="flex-1 flex flex-col bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
           {/* Header & Toolbar */}
           <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800/50 flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-800/20">
             <div className="flex justify-between items-center">
@@ -662,10 +662,11 @@ export default function TextEditorTTS({
         </div>
 
         {/* Right Column: Settings */}
-        <div className="w-full lg:w-80 flex flex-col gap-6">
-          
-          {/* Action Banner (Sidebar Top) */}
-          <div className="w-full bg-primary-600 dark:bg-primary-700 text-white rounded-2xl p-6 shadow-xl flex flex-col gap-6 relative overflow-hidden">
+        <div className="w-full lg:w-80 overflow-y-auto pr-2 pb-2 h-full min-h-0">
+          <div className="flex flex-col gap-6 pt-2">
+            
+            {/* Action Banner (Sidebar Top) */}
+            <div className="w-full bg-primary-600 dark:bg-primary-700 text-white rounded-2xl p-6 shadow-xl flex flex-col gap-6 relative overflow-hidden flex-shrink-0">
             <div className="flex items-center gap-4 z-10">
               <button
                 onClick={handleTogglePlay}
@@ -836,6 +837,7 @@ export default function TextEditorTTS({
             </div>
 
 
+          </div>
           </div>
         </div>
       </div>

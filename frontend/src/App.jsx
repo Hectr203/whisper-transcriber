@@ -286,7 +286,7 @@ export default function App() {
   const isLargeFile = file && file.size > 24 * 1024 * 1024;
 
   return (
-    <div className="min-h-screen w-full bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors duration-300">
+    <div className="h-screen w-full overflow-hidden bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors duration-300">
       
       {/* Navbar */}
       <header className="sticky top-0 z-40 bg-white/90 dark:bg-surface-dark backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
@@ -442,18 +442,20 @@ export default function App() {
       )}
 
       {/* Contenido principal */}
-      <main className="flex-1 w-full max-w-[2000px] mx-auto px-3 sm:px-4 py-8 md:py-12">
+      <main className="flex-1 w-full max-w-[2000px] mx-auto px-3 sm:px-4 py-4 md:py-6 flex flex-col min-h-0 overflow-hidden">
         
         {/* HISTORY TAB */}
         {activeTab === 'history' && (
-          <HistoryPanel 
-            history={history} 
-            onLoadItem={handleLoadHistoryItem} 
-          />
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <HistoryPanel 
+              history={history} 
+              onLoadItem={handleLoadHistoryItem} 
+            />
+          </div>
         )}
 
         {/* STT TAB */}
-        <div className={`animate-fade-in ${activeTab === 'stt' ? 'block' : 'hidden'}`}>
+        <div className={`animate-fade-in flex-1 min-h-0 flex-col ${activeTab === 'stt' ? 'flex' : 'hidden'} ${result ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           
           {/* Hero Section */}
           {!result && !file && (
@@ -669,7 +671,7 @@ export default function App() {
 
           {/* Resultado */}
           {result && (
-            <div className="mt-6">
+            <div className="mt-4 flex-1 min-h-0 flex flex-col">
               <TextEditorTTS 
                 initialText={result.transcription} 
                 initialMetadata={result}
@@ -684,7 +686,7 @@ export default function App() {
         </div>
 
         {/* TTS TAB */}
-        <div className={`animate-fade-in ${activeTab === 'tts' ? 'block' : 'hidden'}`}>
+        <div className={`animate-fade-in flex-1 min-h-0 overflow-hidden ${activeTab === 'tts' ? 'flex flex-col' : 'hidden'}`}>
           <TextEditorTTS 
             initialText="" 
             showReset={false}
@@ -695,13 +697,13 @@ export default function App() {
         </div>
 
         {/* YOUTUBE TAB */}
-        <div className={`animate-fade-in ${activeTab === 'youtube' ? 'block' : 'hidden'}`}>
+        <div className={`animate-fade-in flex-1 overflow-y-auto min-h-0 ${activeTab === 'youtube' ? 'block' : 'hidden'}`}>
           <YouTubePanel onRefreshHistory={loadHistory} />
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="w-full border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-surface-dark py-8 mt-auto">
+      <footer className="w-full flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-surface-dark py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
             <strong className="text-secondary-900 dark:text-white mr-1">Voxelis</strong> 
