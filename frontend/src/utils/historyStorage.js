@@ -68,6 +68,17 @@ export const deleteHistoryItem = async (id) => {
   });
 };
 
+export const clearHistoryItems = async () => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    const request = store.clear();
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export const generateHash = async (text) => {
   const msgBuffer = new TextEncoder().encode(text);
   const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);

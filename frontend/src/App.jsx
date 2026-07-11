@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, Settings, Globe, Zap, Cloud, Menu, History as HistoryIcon, Sparkles } from 'lucide-react';
+import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, Settings, Globe, Zap, Cloud, Menu, History as HistoryIcon, Sparkles, Scissors, FileAudio } from 'lucide-react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
@@ -8,13 +8,13 @@ import HistoryPanel from './components/HistoryPanel';
 import YouTubePanel from './components/YouTubePanel';
 import ApiKeysConfig from './components/ApiKeysConfig';
 import ThemeSelector from './components/ThemeSelector';
-import { saveHistoryItem, getHistoryItems } from './utils/historyStorage';
+import { saveHistoryItem, getHistoryItems, clearHistoryItems } from './utils/historyStorage';
 import logoImage from './images/logo fondo blanco.png';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('stt'); // 'stt' | 'tts'
+  const [activeTab, setActiveTab] = useState('stt'); // 'stt' | 'splitter' | 'tts'
   
   const [file, setFile] = useState(null);
   const [fileInfo, setFileInfo] = useState(null);
@@ -32,10 +32,23 @@ export default function App() {
   const [autoImprove, setAutoImprove] = useState(false);
   const [improveMode, setImproveMode] = useState('mejorar_texto');
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('aiProvider') || 'nvidia');
+  const [splitParts, setSplitParts] = useState(4);
+  const [chunkHistory, setChunkHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('audioChunkHistory') || '[]');
+    } catch (_) {
+      return [];
+    }
+  });
+  const [isSplitting, setIsSplitting] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('aiProvider', aiProvider);
   }, [aiProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('audioChunkHistory', JSON.stringify(chunkHistory));
+  }, [chunkHistory]);
 
   const eventSourceRef = useRef(null);
 
@@ -119,6 +132,128 @@ export default function App() {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   }, [file]);
+
+  const confirmDeleteAll = useCallback((target) => {
+    return window.confirm(
+      `Advertencia: se borrará todo el historial de ${target}. Esta acción no se puede deshacer y no podrás recuperar los audios ni las transcripciones guardadas.\n\n¿Deseas continuar?`
+    );
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    if (!confirmDeleteAll('transcripciones')) return;
+    try {
+      await clearHistoryItems();
+      setHistory([]);
+      setCurrentHistoryId(null);
+    } catch (err) {
+      setError('No se pudo borrar el historial del navegador.');
+    }
+  }, [confirmDeleteAll]);
+
+  const handleClearChunkHistory = useCallback(() => {
+    if (!confirmDeleteAll('fragmentos')) return;
+    setChunkHistory([]);
+  }, [confirmDeleteAll]);
+
+  const formatDuration = useCallback((seconds = 0) => {
+    const total = Math.max(0, Math.round(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    return hours > 0
+      ? `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+      : `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  const getChunkUrl = useCallback((chunk) => {
+    const apiOrigin = API_BASE.endsWith('/api') ? API_BASE.slice(0, -4) : '';
+    return `${apiOrigin}${chunk.downloadUrl}`;
+  }, []);
+
+  const handleSplitAudio = useCallback(async () => {
+    if (!file || isSplitting || isProcessing) return;
+    const parts = Number.parseInt(splitParts, 10);
+    if (!Number.isInteger(parts) || parts < 1 || parts > 100) {
+      setError('Indica un número de partes entre 1 y 100.');
+      return;
+    }
+
+    setIsSplitting(true);
+    setError(null);
+    setStatus({ stage: 'splitting', message: 'Dividiendo audio en fragmentos...', progress: 20 });
+
+    const formData = new FormData();
+    formData.append('audio', file);
+    formData.append('parts', String(parts));
+
+    try {
+      const response = await fetch(`${API_BASE}/transcription/split`, { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'No se pudo dividir el archivo.');
+
+      const group = {
+        id: data.sessionId,
+        timestamp: Date.now(),
+        fileName: data.fileName,
+        totalDuration: data.totalDuration,
+        chunks: data.chunks,
+      };
+      setChunkHistory(prev => [group, ...prev.filter(item => item.id !== group.id)]);
+      setStatus({ stage: 'complete', message: 'Fragmentos listos para descargar o transcribir', progress: 100 });
+    } catch (err) {
+      setError(err.message || 'Error al dividir el archivo');
+      setStatus(null);
+    } finally {
+      setIsSplitting(false);
+    }
+  }, [file, isSplitting, isProcessing, splitParts]);
+
+  const handleTranscribeChunk = useCallback(async (groupId, chunk) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    setError(null);
+    setStatus({ stage: 'transcribing', message: `Transcribiendo ${chunk.name}...`, progress: 30 });
+
+    try {
+      const headers = {};
+      const groqKey = localStorage.getItem('groqApiKey');
+      if (groqKey) headers['X-Groq-Api-Key'] = groqKey;
+
+      const response = await fetch(`${API_BASE}/transcription/chunks/${chunk.sessionId}/${chunk.id}/transcribe`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'No se pudo transcribir el fragmento.');
+
+      const metadata = {
+        ...data,
+        fileName: chunk.fileName,
+        duration: chunk.duration,
+      };
+      setResult(metadata);
+      setActiveTab('stt');
+      setStatus({ stage: 'complete', message: 'Fragmento transcrito', progress: 100 });
+      setChunkHistory(prev => prev.map(group => group.id === groupId ? {
+        ...group,
+        chunks: group.chunks.map(item => item.id === chunk.id ? { ...item, transcription: data.transcription } : item)
+      } : group));
+      await saveHistoryItem({
+        id: `${groupId}-${chunk.id}`,
+        timestamp: Date.now(),
+        fileName: chunk.fileName,
+        transcription: data.transcription,
+        metadata,
+        status: 'complete'
+      });
+      loadHistory();
+    } catch (err) {
+      setError(err.message || 'Error al transcribir el fragmento');
+      setStatus(null);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [isProcessing]);
 
   const handleLoadHistoryItem = useCallback((item) => {
     setFile(item.audioBlob);
@@ -321,6 +456,16 @@ export default function App() {
                 Texto a Voz
               </button>
               <button
+                onClick={() => setActiveTab('splitter')}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-colors ${
+                  activeTab === 'splitter'
+                    ? 'border-primary-600 text-primary-600 dark:border-primary-500 dark:text-primary-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                Dividir Audio
+              </button>
+              <button
                 onClick={() => setActiveTab('youtube')}
                 className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-colors ${
                   activeTab === 'youtube'
@@ -407,6 +552,14 @@ export default function App() {
               Texto a Voz
             </button>
             <button
+              onClick={() => { setActiveTab('splitter'); setMobileMenuOpen(false); }}
+              className={`block w-full text-left pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                activeTab === 'splitter' ? 'bg-primary-50 border-primary-600 text-primary-700 dark:bg-primary-900/20 dark:border-primary-500 dark:text-primary-400' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              Dividir Audio
+            </button>
+            <button
               onClick={() => { setActiveTab('youtube'); setMobileMenuOpen(false); }}
               className={`block w-full text-left pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
                 activeTab === 'youtube' ? 'bg-primary-50 border-primary-600 text-primary-700 dark:bg-primary-900/20 dark:border-primary-500 dark:text-primary-400' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
@@ -450,21 +603,33 @@ export default function App() {
             <HistoryPanel 
               history={history} 
               onLoadItem={handleLoadHistoryItem} 
+              onClearHistory={handleClearHistory}
             />
           </div>
         )}
 
-        {/* STT TAB */}
-        <div className={`animate-fade-in flex-1 min-h-0 flex-col ${activeTab === 'stt' ? 'flex' : 'hidden'} ${result ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        {/* STT / SPLITTER TAB */}
+        <div className={`animate-fade-in flex-1 min-h-0 flex-col ${activeTab === 'stt' || activeTab === 'splitter' ? 'flex' : 'hidden'} ${result ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           
           {/* Hero Section */}
-          {!result && !file && (
+          {!result && !file && activeTab === 'stt' && (
             <div className="mb-12">
               <h1 className="text-3xl md:text-4xl font-bold text-secondary-900 dark:text-white mb-4">
                 Transforma audio en precisión textual
               </h1>
               <p className="text-lg text-slate-600 dark:text-slate-400 max-w-3xl leading-relaxed">
                 Transcribe tus archivos o graba en tiempo real con nuestra tecnología de claridad sonora de última generación.
+              </p>
+            </div>
+          )}
+
+          {!result && !file && activeTab === 'splitter' && (
+            <div className="mb-12">
+              <h1 className="text-3xl md:text-4xl font-bold text-secondary-900 dark:text-white mb-4">
+                Dividir audio en partes iguales
+              </h1>
+              <p className="text-lg text-slate-600 dark:text-slate-400 max-w-3xl leading-relaxed">
+                Sube un audio o video, elige cuántos fragmentos necesitas y transcribe o descarga cada parte desde el historial.
               </p>
             </div>
           )}
@@ -483,7 +648,7 @@ export default function App() {
           )}
 
           {/* Feature Cards (Only show if no file is selected/processing to keep UI clean, matching the design vibe) */}
-          {!result && !file && (
+          {!result && !file && activeTab === 'stt' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
                 <Globe className="text-tertiary-600 mb-4" size={28} />
@@ -550,7 +715,7 @@ export default function App() {
           )}
 
           {/* Opciones de procesamiento automático */}
-          {file && !result && !isProcessing && (
+          {file && !result && !isProcessing && !isSplitting && activeTab === 'stt' && (
             <div className="max-w-2xl mx-auto mt-6 p-5 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -623,8 +788,107 @@ export default function App() {
             </div>
           )}
 
+          {file && !result && !isProcessing && !isSplitting && activeTab === 'splitter' && (
+            <div className="max-w-2xl mx-auto mt-6 p-5 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4 justify-between">
+                <div className="flex-1">
+                  <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <Scissors size={18} className="text-primary-500" /> Dividir en fragmentos
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Crea partes de igual duración y guárdalas en el historial de fragmentos.
+                  </p>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mt-4 mb-2 uppercase tracking-wider">
+                    Número de partes
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={splitParts}
+                    onChange={(e) => setSplitParts(e.target.value)}
+                    className="w-full sm:w-40 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
+                  />
+                </div>
+                <button
+                  onClick={handleSplitAudio}
+                  disabled={isSplitting}
+                  className="px-5 py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white dark:bg-primary-600 dark:hover:bg-primary-700 rounded-xl text-sm font-bold transition-all"
+                >
+                  {isSplitting ? 'Dividiendo...' : 'Dividir audio'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {chunkHistory.length > 0 && !result && activeTab === 'splitter' && (
+            <div className="mt-8 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-bold text-xl text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <FileAudio className="text-primary-600" size={22} /> Historial de fragmentos
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Descarga o transcribe cada parte directamente con Whisper AI.
+                  </p>
+                </div>
+                <button
+                  onClick={handleClearChunkHistory}
+                  className="text-sm font-bold text-red-500 hover:text-red-600 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10"
+                >
+                  Limpiar fragmentos
+                </button>
+              </div>
+
+              <div className="space-y-5">
+                {chunkHistory.map(group => (
+                  <div key={group.id} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                      <div>
+                        <p className="font-bold text-slate-800 dark:text-slate-200 break-all">{group.fileName}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {new Date(group.timestamp).toLocaleString()} · Duración total {formatDuration(group.totalDuration)}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full">
+                        {group.chunks.length} partes
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                      {group.chunks.map(chunk => (
+                        <div key={chunk.id} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
+                          <p className="font-bold text-slate-800 dark:text-slate-200">{chunk.name}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Duración {formatDuration(chunk.duration)}</p>
+                          {chunk.transcription && (
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-2 font-bold">Transcrito</p>
+                          )}
+                          <div className="flex gap-2 mt-4">
+                            <a
+                              href={getChunkUrl(chunk)}
+                              className="flex-1 text-center px-3 py-2 rounded-lg bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:border-primary-400"
+                            >
+                              Descargar
+                            </a>
+                            <button
+                              onClick={() => handleTranscribeChunk(group.id, chunk)}
+                              disabled={isProcessing}
+                              className="flex-1 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-xs font-bold"
+                            >
+                              Transcribir
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Botón transcribir */}
-          {file && !result && !isProcessing && (
+          {file && !result && !isProcessing && !isSplitting && activeTab === 'stt' && (
             <div className="flex justify-center mt-8">
               <button
                 onClick={handleTranscribe}
@@ -636,15 +900,17 @@ export default function App() {
           )}
 
           {/* Progreso */}
-          {isProcessing && status && (
+          {(isProcessing || isSplitting) && status && (
             <div className="mt-8 max-w-3xl mx-auto">
               <ProgressBar status={status} />
-              <button
-                onClick={handleCancel}
-                className="mt-6 w-full py-3 bg-transparent text-slate-500 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-medium hover:text-red-500 hover:border-red-300 transition-all"
-              >
-                Cancelar Operación
-              </button>
+              {isProcessing && (
+                <button
+                  onClick={handleCancel}
+                  className="mt-6 w-full py-3 bg-transparent text-slate-500 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-medium hover:text-red-500 hover:border-red-300 transition-all"
+                >
+                  Cancelar Operación
+                </button>
+              )}
             </div>
           )}
 

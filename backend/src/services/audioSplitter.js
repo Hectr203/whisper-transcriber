@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const WHISPER_MAX_MB = 24; // Dejamos margen del límite de 25MB de la API
 const CHUNK_DURATION_SECONDS = 600; // 10 minutos por chunk (seguro para la mayoría de audios)
+const MANUAL_SPLIT_CONCURRENCY = parseInt(process.env.MANUAL_SPLIT_CONCURRENCY || '3', 10);
 
 const tempDir = process.env.TEMP_DIR || path.join(__dirname, '..', '..', 'temp');
 fs.mkdirSync(tempDir, { recursive: true });
@@ -134,6 +135,53 @@ async function splitAudio(inputPath, onProgress = () => {}) {
   return chunkPaths;
 }
 
+async function splitAudioIntoEqualParts(inputPath, parts, onProgress = () => {}) {
+  const duration = await getAudioDuration(inputPath);
+  const partDuration = duration / parts;
+  const chunkPaths = new Array(parts);
+  const sessionId = uuidv4();
+  let completed = 0;
+
+  const createChunk = (i) => new Promise((resolve, reject) => {
+    const startTime = i * partDuration;
+    const chunkPath = path.join(tempDir, `manual_chunk_${sessionId}_${i}.mp3`);
+
+    ffmpeg(inputPath)
+      .setStartTime(startTime)
+      .setDuration(partDuration)
+      .audioCodec('libmp3lame')
+      .audioBitrate('64k')
+      .format('mp3')
+      .output(chunkPath)
+      .on('end', () => {
+        chunkPaths[i] = {
+          local: chunkPath,
+          index: i + 1,
+          duration: partDuration,
+          start: startTime,
+        };
+        completed++;
+        onProgress(completed, parts);
+        resolve();
+      })
+      .on('error', (err) => {
+        reject(new Error(`Error al dividir audio (parte ${i + 1}): ${err.message}`));
+      })
+      .run();
+  });
+
+  const concurrency = Math.max(1, Math.min(MANUAL_SPLIT_CONCURRENCY, parts));
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (nextIndex < parts) {
+      const currentIndex = nextIndex++;
+      await createChunk(currentIndex);
+    }
+  }));
+
+  return { duration, chunks: chunkPaths };
+}
+
 /**
  * Elimina archivos temporales de chunks
  */
@@ -150,4 +198,4 @@ function cleanupChunks(chunkPaths, originalPath) {
   });
 }
 
-module.exports = { splitAudio, cleanupChunks, getAudioDuration, analyzeMedia, extractAudioIfVideo };
+module.exports = { splitAudio, splitAudioIntoEqualParts, cleanupChunks, getAudioDuration, analyzeMedia, extractAudioIfVideo };

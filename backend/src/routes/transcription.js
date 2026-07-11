@@ -4,12 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { upload } = require('../middleware/uploadMiddleware');
-const { splitAudio, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
+const { splitAudio, splitAudioIntoEqualParts, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
 const { transcribeChunks } = require('../services/whisperService');
 const azureBlobService = require('../services/azureBlobService');
 
 // Map para gestionar conexiones SSE activas
 const activeJobs = new Map();
+
+const safeFileName = (name = 'audio') => path.basename(name).replace(/[^a-zA-Z0-9._-]+/g, '_');
 
 /**
  * POST /api/transcription/upload
@@ -107,6 +109,119 @@ router.post('/upload', (req, res, next) => {
       console.log(`[Route] Cliente desconectado: ${jobId}`);
     });
   });
+});
+
+router.post('/split', (req, res, next) => {
+  upload.single('audio')(req, res, async (err) => {
+    if (err) return next(err);
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se recibió archivo', message: 'Envía un archivo de audio en el campo "audio"' });
+    }
+
+    const parts = Number.parseInt(req.body.parts, 10);
+    if (!Number.isInteger(parts) || parts < 1 || parts > 100) {
+      fs.rm(req.file.path, { force: true }, () => {});
+      return res.status(400).json({ error: 'Partes inválidas', message: 'Indica un número de partes entre 1 y 100.' });
+    }
+
+    const sessionId = req.file.filename.replace('upload_', '').split('.')[0];
+    let audioToSplit = req.file.path;
+    let chunkInfo = [];
+
+    try {
+      const mediaInfo = await analyzeMedia(req.file.path);
+      if (mediaInfo.hasVideo) {
+        audioToSplit = await extractAudioIfVideo(req.file.path);
+      }
+
+      const splitResult = await splitAudioIntoEqualParts(audioToSplit, parts);
+      chunkInfo = splitResult.chunks;
+      const originalBase = safeFileName(req.file.originalname).replace(/\.[^.]+$/, '');
+
+      const chunks = [];
+      for (const chunk of chunkInfo) {
+        const fileName = `${originalBase}_parte_${chunk.index}_de_${parts}.mp3`;
+        const blobPath = `temporales/splitter/${sessionId}/part_${chunk.index}.mp3`;
+        await azureBlobService.subirArchivo(chunk.local, blobPath, {
+          mimetype: 'audio/mpeg',
+          jobId: sessionId,
+          metadata: { source: 'manual-splitter', originalName: req.file.originalname }
+        });
+        chunks.push({
+          id: String(chunk.index),
+          sessionId,
+          name: `Parte ${chunk.index}`,
+          fileName,
+          duration: chunk.duration,
+          start: chunk.start,
+          downloadUrl: `/api/transcription/chunks/${sessionId}/${chunk.index}/download`,
+        });
+      }
+
+      res.json({
+        sessionId,
+        fileName: req.file.originalname,
+        totalDuration: splitResult.duration,
+        parts,
+        chunks,
+      });
+    } catch (error) {
+      console.error('[Split] Error:', error.message);
+      await azureBlobService.eliminarPorPrefijo(`temporales/splitter/${sessionId}/`).catch(() => {});
+      res.status(500).json({ error: 'Error al dividir el archivo', message: error.message });
+    } finally {
+      fs.rm(req.file.path, { force: true }, () => {});
+      if (audioToSplit !== req.file.path) fs.rm(audioToSplit, { force: true }, () => {});
+      cleanupChunks(chunkInfo.map(c => c.local), null);
+    }
+  });
+});
+
+router.get('/chunks/:sessionId/:chunkId/download', async (req, res) => {
+  const { sessionId, chunkId } = req.params;
+  const blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp3`;
+
+  try {
+    if (!(await azureBlobService.existeArchivo(blobPath))) {
+      return res.status(404).json({ error: 'Fragmento no encontrado' });
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', `attachment; filename="fragmento_${chunkId}.mp3"`);
+    const stream = await azureBlobService.obtenerFlujoArchivo(blobPath);
+    stream.on('error', (error) => {
+      console.error('[Download chunk] Error:', error.message);
+      if (!res.headersSent) res.status(500).end();
+    });
+    stream.pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: 'Error descargando fragmento', message: error.message });
+  }
+});
+
+router.post('/chunks/:sessionId/:chunkId/transcribe', async (req, res) => {
+  const { sessionId, chunkId } = req.params;
+  const blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp3`;
+
+  try {
+    if (!(await azureBlobService.existeArchivo(blobPath))) {
+      return res.status(404).json({ error: 'Fragmento no encontrado' });
+    }
+    const transcription = await transcribeChunks(
+      [{ blob: blobPath }],
+      () => {},
+      { apiKey: req.headers['x-groq-api-key'] }
+    );
+    res.json({
+      transcription,
+      charCount: transcription.length,
+      wordCount: transcription.split(/\s+/).filter(w => w.length > 0).length,
+      fileName: `fragmento_${chunkId}.mp3`,
+      fileType: 'audio',
+    });
+  } catch (error) {
+    console.error('[Transcribe chunk] Error:', error.message);
+    res.status(500).json({ error: 'Error transcribiendo fragmento', message: formatErrorMessage(error) });
+  }
 });
 
 async function processTranscription({ localFilePath, originalBlobPath, originalName, fileSize, jobId, apiKey, sendEvent, cleanupLocal, getJob }) {

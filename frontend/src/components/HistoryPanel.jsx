@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Clock, RefreshCw, CheckCircle, AlertTriangle, FileAudio, FileVideo, Search, FilterX, Calendar, Filter } from 'lucide-react';
 
-export default function HistoryPanel({ history, onLoadItem }) {
+export default function HistoryPanel({ history, onLoadItem, onClearHistory }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDate, setFilterDate] = useState('');
   const [filterTime, setFilterTime] = useState('all');
@@ -96,6 +96,15 @@ export default function HistoryPanel({ history, onLoadItem }) {
         <div className="text-sm font-medium text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl">
           Mostrando {filteredHistory.length} de {history.length} elementos
         </div>
+      </div>
+
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={onClearHistory}
+          className="text-sm font-bold text-red-500 hover:text-red-600 px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:hover:bg-red-900/20 transition-colors"
+        >
+          Borrar todo el historial
+        </button>
       </div>
 
       <div className="bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl p-5 mb-8 shadow-sm flex flex-col gap-4 relative z-20">
