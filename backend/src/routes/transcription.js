@@ -193,20 +193,30 @@ async function processTranscription({ localFilePath, originalBlobPath, originalN
     // Modificaremos whisperService para que soporte Blob Paths
     const transcription = await transcribeChunks(
       chunkBlobPaths,
-      (current, total) => {
+      (current, total, statusType, customMessage) => {
         if (getJob()?.cancelled) return;
         const progressValue = Math.round(30 + (current / total) * 65);
+        
+        let message = total > 1
+          ? `Transcribiendo segmento ${current} de ${total}...`
+          : 'Transcribiendo audio...';
+
+        if (statusType === 'waiting_rate_limit') {
+          message = customMessage;
+        }
+
         sendEvent('status', {
           stage: 'transcribing',
-          message: total > 1
-            ? `Transcribiendo segmento ${current} de ${total}...`
-            : 'Transcribiendo audio...',
+          message,
           progress: progressValue,
           current,
           total,
         });
       },
-      { apiKey } // Pasamos la apiKey al servicio
+      { 
+        apiKey,
+        isCancelled: () => getJob()?.cancelled
+      }
     );
 
     if (getJob()?.cancelled) throw new Error('Trabajo cancelado por el cliente');
