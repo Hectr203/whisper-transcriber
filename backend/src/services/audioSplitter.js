@@ -159,6 +159,8 @@ async function splitAudioIntoEqualParts(inputPath, parts, onProgress = () => {})
           index: i + 1,
           duration: partDuration,
           start: startTime,
+          type: 'audio',
+          ext: 'mp3',
         };
         completed++;
         onProgress(completed, parts);
@@ -166,6 +168,72 @@ async function splitAudioIntoEqualParts(inputPath, parts, onProgress = () => {})
       })
       .on('error', (err) => {
         reject(new Error(`Error al dividir audio (parte ${i + 1}): ${err.message}`));
+      })
+      .run();
+  });
+
+  const concurrency = Math.max(1, Math.min(MANUAL_SPLIT_CONCURRENCY, parts));
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (nextIndex < parts) {
+      const currentIndex = nextIndex++;
+      await createChunk(currentIndex);
+    }
+  }));
+
+  return { duration, chunks: chunkPaths };
+}
+
+/**
+ * Divide un archivo de video en segmentos iguales en formato MP4
+ * @param {string} inputPath - Ruta del archivo original de video
+ * @param {number} parts - Número de partes
+ * @param {Function} onProgress - Callback de progreso
+ * @returns {Promise<{duration: number, chunks: Array}>}
+ */
+async function splitVideoIntoEqualParts(inputPath, parts, onProgress = () => {}) {
+  const { duration, hasVideo } = await analyzeMedia(inputPath);
+  if (!hasVideo) {
+    throw new Error('El archivo seleccionado no contiene pista de video.');
+  }
+
+  const partDuration = duration / parts;
+  const chunkPaths = new Array(parts);
+  const sessionId = uuidv4();
+  let completed = 0;
+
+  const createChunk = (i) => new Promise((resolve, reject) => {
+    const startTime = i * partDuration;
+    const chunkPath = path.join(tempDir, `manual_vid_chunk_${sessionId}_${i}.mp4`);
+
+    ffmpeg(inputPath)
+      .setStartTime(startTime)
+      .setDuration(partDuration)
+      .videoCodec('libx264')
+      .outputOptions([
+        '-preset ultrafast',
+        '-crf 22',
+        '-movflags +faststart'
+      ])
+      .audioCodec('aac')
+      .audioBitrate('128k')
+      .format('mp4')
+      .output(chunkPath)
+      .on('end', () => {
+        chunkPaths[i] = {
+          local: chunkPath,
+          index: i + 1,
+          duration: partDuration,
+          start: startTime,
+          type: 'video',
+          ext: 'mp4',
+        };
+        completed++;
+        onProgress(completed, parts);
+        resolve();
+      })
+      .on('error', (err) => {
+        reject(new Error(`Error al dividir video (parte ${i + 1}): ${err.message}`));
       })
       .run();
   });
@@ -198,4 +266,12 @@ function cleanupChunks(chunkPaths, originalPath) {
   });
 }
 
-module.exports = { splitAudio, splitAudioIntoEqualParts, cleanupChunks, getAudioDuration, analyzeMedia, extractAudioIfVideo };
+module.exports = {
+  splitAudio,
+  splitAudioIntoEqualParts,
+  splitVideoIntoEqualParts,
+  cleanupChunks,
+  getAudioDuration,
+  analyzeMedia,
+  extractAudioIfVideo,
+};

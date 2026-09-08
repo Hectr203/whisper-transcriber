@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, Settings, Globe, Zap, Cloud, Menu, History as HistoryIcon, Sparkles, Scissors, FileAudio } from 'lucide-react';
+import { Mic, Volume2, Music, Film, AlertTriangle, X, Download, Moon, Sun, Settings, Globe, Zap, Cloud, Menu, History as HistoryIcon, Sparkles, Scissors, FileAudio, Play } from 'lucide-react';
 import UploadZone from './components/UploadZone';
 import AudioRecorder from './components/AudioRecorder';
 import ProgressBar from './components/ProgressBar';
@@ -33,9 +33,11 @@ export default function App() {
   const [improveMode, setImproveMode] = useState('mejorar_texto');
   const [aiProvider, setAiProvider] = useState(() => localStorage.getItem('aiProvider') || 'nvidia');
   const [splitParts, setSplitParts] = useState(4);
+  const [splitMediaType, setSplitMediaType] = useState('audio'); // 'audio' | 'video'
+  const [previewChunkUrl, setPreviewChunkUrl] = useState(null);
   const [chunkHistory, setChunkHistory] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('audioChunkHistory') || '[]');
+      return JSON.parse(localStorage.getItem('mediaChunkHistory') || localStorage.getItem('audioChunkHistory') || '[]');
     } catch (_) {
       return [];
     }
@@ -47,7 +49,7 @@ export default function App() {
   }, [aiProvider]);
 
   useEffect(() => {
-    localStorage.setItem('audioChunkHistory', JSON.stringify(chunkHistory));
+    localStorage.setItem('mediaChunkHistory', JSON.stringify(chunkHistory));
   }, [chunkHistory]);
 
   const eventSourceRef = useRef(null);
@@ -170,7 +172,7 @@ export default function App() {
     return `${apiOrigin}${chunk.downloadUrl}`;
   }, []);
 
-  const handleSplitAudio = useCallback(async () => {
+  const handleSplitMedia = useCallback(async () => {
     if (!file || isSplitting || isProcessing) return;
     const parts = Number.parseInt(splitParts, 10);
     if (!Number.isInteger(parts) || parts < 1 || parts > 100) {
@@ -180,11 +182,16 @@ export default function App() {
 
     setIsSplitting(true);
     setError(null);
-    setStatus({ stage: 'splitting', message: 'Dividiendo audio en fragmentos...', progress: 20 });
+    setStatus({
+      stage: 'splitting',
+      message: `Dividiendo ${splitMediaType === 'video' ? 'video' : 'audio'} en ${parts} partes...`,
+      progress: 20
+    });
 
     const formData = new FormData();
     formData.append('audio', file);
     formData.append('parts', String(parts));
+    formData.append('mediaType', splitMediaType);
 
     try {
       const response = await fetch(`${API_BASE}/transcription/split`, { method: 'POST', body: formData });
@@ -195,18 +202,23 @@ export default function App() {
         id: data.sessionId,
         timestamp: Date.now(),
         fileName: data.fileName,
+        mediaType: data.mediaType || splitMediaType,
         totalDuration: data.totalDuration,
         chunks: data.chunks,
       };
       setChunkHistory(prev => [group, ...prev.filter(item => item.id !== group.id)]);
-      setStatus({ stage: 'complete', message: 'Fragmentos listos para descargar o transcribir', progress: 100 });
+      setStatus({
+        stage: 'complete',
+        message: `Fragmentos de ${data.mediaType === 'video' ? 'video' : 'audio'} listos para descargar o transcribir`,
+        progress: 100
+      });
     } catch (err) {
       setError(err.message || 'Error al dividir el archivo');
       setStatus(null);
     } finally {
       setIsSplitting(false);
     }
-  }, [file, isSplitting, isProcessing, splitParts]);
+  }, [file, isSplitting, isProcessing, splitParts, splitMediaType]);
 
   const handleTranscribeChunk = useCallback(async (groupId, chunk) => {
     if (isProcessing) return;
@@ -463,7 +475,7 @@ export default function App() {
                     : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
               >
-                Dividir Audio
+                División de Multimedia
               </button>
               <button
                 onClick={() => setActiveTab('youtube')}
@@ -557,7 +569,7 @@ export default function App() {
                 activeTab === 'splitter' ? 'bg-primary-50 border-primary-600 text-primary-700 dark:bg-primary-900/20 dark:border-primary-500 dark:text-primary-400' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
               }`}
             >
-              Dividir Audio
+              División de Multimedia
             </button>
             <button
               onClick={() => { setActiveTab('youtube'); setMobileMenuOpen(false); }}
@@ -624,26 +636,68 @@ export default function App() {
           )}
 
           {!result && !file && activeTab === 'splitter' && (
-            <div className="mb-12">
-              <h1 className="text-3xl md:text-4xl font-bold text-secondary-900 dark:text-white mb-4">
-                Dividir audio en partes iguales
+            <div className="mb-8">
+              <h1 className="text-3xl md:text-4xl font-bold text-secondary-900 dark:text-white mb-3">
+                División de Multimedia
               </h1>
               <p className="text-lg text-slate-600 dark:text-slate-400 max-w-3xl leading-relaxed">
-                Sube un audio o video, elige cuántos fragmentos necesitas y transcribe o descarga cada parte desde el historial.
+                Divide archivos de audio o video en partes iguales con precisión de milisegundos. Elige el modo según el formato que requieras generar.
               </p>
             </div>
           )}
 
+          {/* Selector de modo para División de Multimedia */}
+          {activeTab === 'splitter' && !result && (
+            <div className="mb-8 flex flex-col items-center">
+              <div className="inline-flex p-1.5 bg-slate-100 dark:bg-surface-dark border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSplitMediaType('audio')}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
+                    splitMediaType === 'audio'
+                      ? 'bg-white dark:bg-primary-600 text-primary-700 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Music size={18} className={splitMediaType === 'audio' ? 'text-primary-600 dark:text-white' : ''} />
+                  Dividir Audio
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitMediaType('video')}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
+                    splitMediaType === 'video'
+                      ? 'bg-white dark:bg-primary-600 text-primary-700 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Film size={18} className={splitMediaType === 'video' ? 'text-primary-600 dark:text-white' : ''} />
+                  Dividir Video
+                </button>
+              </div>
+
+              {splitMediaType === 'video' && file && fileInfo && fileInfo.type !== 'video' && (
+                <div className="mt-4 max-w-xl p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-center gap-3 text-amber-800 dark:text-amber-200 text-xs animate-fade-in">
+                  <AlertTriangle size={18} className="text-amber-600 flex-shrink-0" />
+                  <span>El archivo seleccionado es solo audio. Para generar fragmentos en video MP4, selecciona un archivo con pista de video (MP4, WebM, MOV, MKV, AVI).</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {!result && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+            <div className={`grid grid-cols-1 ${activeTab === 'splitter' && splitMediaType === 'video' ? 'max-w-2xl mx-auto w-full' : 'md:grid-cols-2'} gap-6 mb-12`}>
               <UploadZone
                 onFileSelected={handleFileSelected}
                 disabled={isProcessing}
+                acceptedFormatType={activeTab === 'splitter' ? splitMediaType : 'all'}
               />
-              <AudioRecorder
-                onRecordComplete={handleFileSelected}
-                disabled={isProcessing}
-              />
+              {!(activeTab === 'splitter' && splitMediaType === 'video') && (
+                <AudioRecorder
+                  onRecordComplete={handleFileSelected}
+                  disabled={isProcessing}
+                />
+              )}
             </div>
           )}
 
@@ -790,33 +844,52 @@ export default function App() {
 
           {file && !result && !isProcessing && !isSplitting && activeTab === 'splitter' && (
             <div className="max-w-2xl mx-auto mt-6 p-5 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-end gap-4 justify-between">
-                <div className="flex-1">
+              <div className="flex flex-col gap-4">
+                <div>
                   <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                    <Scissors size={18} className="text-primary-500" /> Dividir en fragmentos
+                    <Scissors size={18} className="text-primary-500" />
+                    Dividir en fragmentos de {splitMediaType === 'video' ? 'video' : 'audio'}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Crea partes de igual duración y guárdalas en el historial de fragmentos.
+                    Crea partes de igual duración y guárdalas en el historial de fragmentos multimedia.
                   </p>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mt-4 mb-2 uppercase tracking-wider">
-                    Número de partes
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={splitParts}
-                    onChange={(e) => setSplitParts(e.target.value)}
-                    className="w-full sm:w-40 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
-                  />
                 </div>
-                <button
-                  onClick={handleSplitAudio}
-                  disabled={isSplitting}
-                  className="px-5 py-3 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-white dark:bg-primary-600 dark:hover:bg-primary-700 rounded-xl text-sm font-bold transition-all"
-                >
-                  {isSplitting ? 'Dividiendo...' : 'Dividir audio'}
-                </button>
+
+                <div className="flex flex-col sm:flex-row sm:items-end gap-4 justify-between pt-2">
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
+                      Número de partes (1 - 100)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={splitParts}
+                      onChange={(e) => setSplitParts(e.target.value)}
+                      className="w-full sm:w-44 px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500"
+                    />
+
+                    {fileInfo?.durationSec > 0 && (
+                      <div className="mt-3 py-2 px-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-xs">
+                        <span className="text-slate-500 dark:text-slate-400">Duración por fragmento:</span>
+                        <span className="font-bold text-primary-600 dark:text-primary-400">
+                          ~ {formatDuration(fileInfo.durationSec / (Math.max(1, Number.parseInt(splitParts, 10) || 1)))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleSplitMedia}
+                    disabled={isSplitting || (splitMediaType === 'video' && fileInfo && fileInfo.type !== 'video')}
+                    className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold transition-all shadow-sm flex items-center justify-center gap-2 flex-shrink-0"
+                  >
+                    {splitMediaType === 'video' ? <Film size={16} /> : <Music size={16} />}
+                    {isSplitting
+                      ? 'Dividiendo...'
+                      : `Dividir ${splitMediaType === 'video' ? 'video' : 'audio'} en ${splitParts} partes`}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -826,10 +899,10 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                 <div>
                   <h3 className="font-bold text-xl text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                    <FileAudio className="text-primary-600" size={22} /> Historial de fragmentos
+                    <FileAudio className="text-primary-600" size={22} /> Historial de fragmentos multimedia
                   </h3>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Descarga o transcribe cada parte directamente con Whisper AI.
+                    Descarga, previsualiza o transcribe cada fragmento de audio o video directamente con Whisper AI.
                   </p>
                 </div>
                 <button
@@ -841,48 +914,88 @@ export default function App() {
               </div>
 
               <div className="space-y-5">
-                {chunkHistory.map(group => (
-                  <div key={group.id} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                      <div>
-                        <p className="font-bold text-slate-800 dark:text-slate-200 break-all">{group.fileName}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          {new Date(group.timestamp).toLocaleString()} · Duración total {formatDuration(group.totalDuration)}
-                        </p>
-                      </div>
-                      <span className="text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full">
-                        {group.chunks.length} partes
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-                      {group.chunks.map(chunk => (
-                        <div key={chunk.id} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
-                          <p className="font-bold text-slate-800 dark:text-slate-200">{chunk.name}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Duración {formatDuration(chunk.duration)}</p>
-                          {chunk.transcription && (
-                            <p className="text-xs text-green-600 dark:text-green-400 mt-2 font-bold">Transcrito</p>
+                {chunkHistory.map(group => {
+                  const isVideoGroup = group.mediaType === 'video' || (group.chunks?.[0]?.ext === 'mp4');
+                  return (
+                    <div key={group.id} className="border border-slate-100 dark:border-slate-800 rounded-xl p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isVideoGroup ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 px-2.5 py-1 rounded-full">
+                              <Film size={13} /> Video MP4
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/50 px-2.5 py-1 rounded-full">
+                              <Music size={13} /> Audio MP3
+                            </span>
                           )}
-                          <div className="flex gap-2 mt-4">
-                            <a
-                              href={getChunkUrl(chunk)}
-                              className="flex-1 text-center px-3 py-2 rounded-lg bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:border-primary-400"
-                            >
-                              Descargar
-                            </a>
-                            <button
-                              onClick={() => handleTranscribeChunk(group.id, chunk)}
-                              disabled={isProcessing}
-                              className="flex-1 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-xs font-bold"
-                            >
-                              Transcribir
-                            </button>
-                          </div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 break-all">{group.fileName}</p>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                            • {new Date(group.timestamp).toLocaleString()} • Total: {formatDuration(group.totalDuration)}
+                          </span>
                         </div>
-                      ))}
+                        <span className="text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 px-3 py-1 rounded-full">
+                          {group.chunks.length} partes
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                        {group.chunks.map(chunk => {
+                          const isChunkVideo = chunk.ext === 'mp4' || chunk.mediaType === 'video' || isVideoGroup;
+                          return (
+                            <div key={chunk.id} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-center justify-between">
+                                  <p className="font-bold text-slate-800 dark:text-slate-200">{chunk.name}</p>
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                    {isChunkVideo ? 'MP4' : 'MP3'}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                  Duración {formatDuration(chunk.duration)}
+                                </p>
+                                {chunk.transcription && (
+                                  <p className="text-xs text-green-600 dark:text-green-400 mt-2 font-bold flex items-center gap-1">
+                                    ✓ Transcrito
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex gap-2 mt-4">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewChunkUrl({
+                                    url: `${getChunkUrl(chunk)}?inline=true`,
+                                    type: isChunkVideo ? 'video' : 'audio',
+                                    name: `${group.fileName} - ${chunk.name}`
+                                  })}
+                                  className="p-2 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+                                  title="Reproducir / Previsualizar"
+                                >
+                                  <Play size={15} />
+                                </button>
+                                <a
+                                  href={getChunkUrl(chunk)}
+                                  className="flex-1 text-center px-2 py-2 rounded-lg bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:border-primary-400 flex items-center justify-center gap-1"
+                                  download
+                                >
+                                  <Download size={13} />
+                                  Descargar
+                                </a>
+                                <button
+                                  onClick={() => handleTranscribeChunk(group.id, chunk)}
+                                  disabled={isProcessing}
+                                  className="flex-1 px-2 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-xs font-bold transition-colors"
+                                >
+                                  Transcribir
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -967,6 +1080,47 @@ export default function App() {
           <YouTubePanel onRefreshHistory={loadHistory} />
         </div>
       </main>
+
+      {/* Modal de Previsualización Multimedia */}
+      {previewChunkUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-surface-dark rounded-2xl p-6 max-w-2xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl relative">
+            <button
+              onClick={() => setPreviewChunkUrl(null)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X size={20} />
+            </button>
+            <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-4 flex items-center gap-2 pr-8">
+              {previewChunkUrl.type === 'video' ? (
+                <Film size={20} className="text-primary-500" />
+              ) : (
+                <Music size={20} className="text-primary-500" />
+              )}
+              <span className="truncate">{previewChunkUrl.name}</span>
+            </h3>
+            <div className="flex items-center justify-center bg-slate-950 rounded-xl overflow-hidden min-h-[160px]">
+              {previewChunkUrl.type === 'video' ? (
+                <video
+                  src={previewChunkUrl.url}
+                  controls
+                  autoPlay
+                  className="w-full max-h-[60vh] rounded-xl"
+                />
+              ) : (
+                <div className="w-full p-6">
+                  <audio
+                    src={previewChunkUrl.url}
+                    controls
+                    autoPlay
+                    className="w-full"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="w-full flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-surface-dark py-4 mt-auto">

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { upload } = require('../middleware/uploadMiddleware');
-const { splitAudio, splitAudioIntoEqualParts, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
+const { splitAudio, splitAudioIntoEqualParts, splitVideoIntoEqualParts, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
 const { transcribeChunks } = require('../services/whisperService');
 const azureBlobService = require('../services/azureBlobService');
 
@@ -115,7 +115,7 @@ router.post('/split', (req, res, next) => {
   upload.single('audio')(req, res, async (err) => {
     if (err) return next(err);
     if (!req.file) {
-      return res.status(400).json({ error: 'No se recibió archivo', message: 'Envía un archivo de audio en el campo "audio"' });
+      return res.status(400).json({ error: 'No se recibió archivo', message: 'Envía un archivo en el campo "audio"' });
     }
 
     const parts = Number.parseInt(req.body.parts, 10);
@@ -124,28 +124,51 @@ router.post('/split', (req, res, next) => {
       return res.status(400).json({ error: 'Partes inválidas', message: 'Indica un número de partes entre 1 y 100.' });
     }
 
+    const mediaType = req.body.mediaType === 'video' ? 'video' : 'audio';
     const sessionId = req.file.filename.replace('upload_', '').split('.')[0];
-    let audioToSplit = req.file.path;
+    let fileToClean = null;
     let chunkInfo = [];
 
     try {
       const mediaInfo = await analyzeMedia(req.file.path);
-      if (mediaInfo.hasVideo) {
-        audioToSplit = await extractAudioIfVideo(req.file.path);
+      let splitResult;
+
+      if (mediaType === 'video') {
+        if (!mediaInfo.hasVideo) {
+          fs.rm(req.file.path, { force: true }, () => {});
+          return res.status(400).json({
+            error: 'Archivo sin video',
+            message: 'El archivo seleccionado no contiene pista de video. Para dividir video, selecciona un archivo de video (ej. MP4, WebM, MOV).'
+          });
+        }
+        splitResult = await splitVideoIntoEqualParts(req.file.path, parts);
+      } else {
+        let audioToSplit = req.file.path;
+        if (mediaInfo.hasVideo) {
+          audioToSplit = await extractAudioIfVideo(req.file.path);
+          fileToClean = audioToSplit;
+        }
+        splitResult = await splitAudioIntoEqualParts(audioToSplit, parts);
       }
 
-      const splitResult = await splitAudioIntoEqualParts(audioToSplit, parts);
       chunkInfo = splitResult.chunks;
       const originalBase = safeFileName(req.file.originalname).replace(/\.[^.]+$/, '');
+      const ext = mediaType === 'video' ? 'mp4' : 'mp3';
+      const mime = mediaType === 'video' ? 'video/mp4' : 'audio/mpeg';
 
       const chunks = [];
       for (const chunk of chunkInfo) {
-        const fileName = `${originalBase}_parte_${chunk.index}_de_${parts}.mp3`;
-        const blobPath = `temporales/splitter/${sessionId}/part_${chunk.index}.mp3`;
+        const fileName = `${originalBase}_parte_${chunk.index}_de_${parts}.${ext}`;
+        const blobPath = `temporales/splitter/${sessionId}/part_${chunk.index}.${ext}`;
         await azureBlobService.subirArchivo(chunk.local, blobPath, {
-          mimetype: 'audio/mpeg',
+          mimetype: mime,
           jobId: sessionId,
-          metadata: { source: 'manual-splitter', originalName: req.file.originalname }
+          metadata: {
+            source: 'manual-splitter',
+            originalName: req.file.originalname,
+            mediaType,
+            format: ext
+          }
         });
         chunks.push({
           id: String(chunk.index),
@@ -154,6 +177,8 @@ router.post('/split', (req, res, next) => {
           fileName,
           duration: chunk.duration,
           start: chunk.start,
+          mediaType,
+          ext,
           downloadUrl: `/api/transcription/chunks/${sessionId}/${chunk.index}/download`,
         });
       }
@@ -161,6 +186,7 @@ router.post('/split', (req, res, next) => {
       res.json({
         sessionId,
         fileName: req.file.originalname,
+        mediaType,
         totalDuration: splitResult.duration,
         parts,
         chunks,
@@ -171,7 +197,7 @@ router.post('/split', (req, res, next) => {
       res.status(500).json({ error: 'Error al dividir el archivo', message: error.message });
     } finally {
       fs.rm(req.file.path, { force: true }, () => {});
-      if (audioToSplit !== req.file.path) fs.rm(audioToSplit, { force: true }, () => {});
+      if (fileToClean && fileToClean !== req.file.path) fs.rm(fileToClean, { force: true }, () => {});
       cleanupChunks(chunkInfo.map(c => c.local), null);
     }
   });
@@ -179,14 +205,27 @@ router.post('/split', (req, res, next) => {
 
 router.get('/chunks/:sessionId/:chunkId/download', async (req, res) => {
   const { sessionId, chunkId } = req.params;
-  const blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp3`;
 
   try {
-    if (!(await azureBlobService.existeArchivo(blobPath))) {
-      return res.status(404).json({ error: 'Fragmento no encontrado' });
+    let ext = 'mp3';
+    let mime = 'audio/mpeg';
+    let blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp4`;
+
+    if (await azureBlobService.existeArchivo(blobPath)) {
+      ext = 'mp4';
+      mime = 'video/mp4';
+    } else {
+      blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp3`;
+      if (!(await azureBlobService.existeArchivo(blobPath))) {
+        return res.status(404).json({ error: 'Fragmento no encontrado' });
+      }
     }
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `attachment; filename="fragmento_${chunkId}.mp3"`);
+
+    const isInline = req.query.inline === 'true' || req.query.inline === '1';
+    const dispositionType = isInline ? 'inline' : 'attachment';
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `${dispositionType}; filename="fragmento_${chunkId}.${ext}"`);
     const stream = await azureBlobService.obtenerFlujoArchivo(blobPath);
     stream.on('error', (error) => {
       console.error('[Download chunk] Error:', error.message);
@@ -200,12 +239,21 @@ router.get('/chunks/:sessionId/:chunkId/download', async (req, res) => {
 
 router.post('/chunks/:sessionId/:chunkId/transcribe', async (req, res) => {
   const { sessionId, chunkId } = req.params;
-  const blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp3`;
 
   try {
+    let ext = 'mp4';
+    let fileType = 'video';
+    let blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp4`;
+
     if (!(await azureBlobService.existeArchivo(blobPath))) {
-      return res.status(404).json({ error: 'Fragmento no encontrado' });
+      blobPath = `temporales/splitter/${sessionId}/part_${chunkId}.mp3`;
+      ext = 'mp3';
+      fileType = 'audio';
+      if (!(await azureBlobService.existeArchivo(blobPath))) {
+        return res.status(404).json({ error: 'Fragmento no encontrado' });
+      }
     }
+
     const transcription = await transcribeChunks(
       [{ blob: blobPath }],
       () => {},
@@ -215,8 +263,8 @@ router.post('/chunks/:sessionId/:chunkId/transcribe', async (req, res) => {
       transcription,
       charCount: transcription.length,
       wordCount: transcription.split(/\s+/).filter(w => w.length > 0).length,
-      fileName: `fragmento_${chunkId}.mp3`,
-      fileType: 'audio',
+      fileName: `fragmento_${chunkId}.${ext}`,
+      fileType,
     });
   } catch (error) {
     console.error('[Transcribe chunk] Error:', error.message);

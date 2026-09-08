@@ -6,7 +6,7 @@ const ALLOWED_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'aud
 const ALLOWED_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv'];
 const MAX_SIZE_GB = 1;
 
-export default function UploadZone({ onFileSelected, disabled }) {
+export default function UploadZone({ onFileSelected, disabled, acceptedFormatType = 'all' }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
   const [localError, setLocalError] = useState('');
@@ -47,6 +47,18 @@ export default function UploadZone({ onFileSelected, disabled }) {
   const handleInputChange = (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); };
   const handleClick = () => { if (!disabled) inputRef.current?.click(); };
 
+  const formatBadges = acceptedFormatType === 'video'
+    ? ['MP4', 'WEBM', 'MOV', 'MKV']
+    : acceptedFormatType === 'audio'
+    ? ['MP3', 'WAV', 'M4A', 'FLAC']
+    : ['MP3', 'WAV', 'MP4', 'M4A', 'FLAC'];
+
+  const dropText = acceptedFormatType === 'video'
+    ? 'Arrastra y suelta tu archivo de video aquí o haz clic para explorar tus archivos locales.'
+    : acceptedFormatType === 'audio'
+    ? 'Arrastra y suelta tu archivo de audio aquí o haz clic para explorar tus archivos locales.'
+    : 'Arrastra y suelta tu audio o video aquí o haz clic para explorar tus archivos locales.';
+
   return (
     <div className="w-full h-full flex flex-col min-h-[340px]">
       <div
@@ -84,11 +96,11 @@ export default function UploadZone({ onFileSelected, disabled }) {
         </h3>
 
         <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 max-w-xs leading-relaxed">
-          Arrastra y suelta tu audio aquí o haz clic para explorar tus archivos locales.
+          {dropText}
         </p>
 
         <div className="flex gap-2 justify-center flex-wrap">
-          {['MP3', 'WAV', 'M4A', 'FLAC'].map(fmt => (
+          {formatBadges.map(fmt => (
             <span key={fmt} className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-4 py-1.5 text-xs font-semibold rounded-full tracking-wide">
               {fmt}
             </span>

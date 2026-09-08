@@ -34,10 +34,18 @@ async function transcribeFile(chunk, options = {}) {
     attempt++;
     const formData = new FormData();
     
-    // Enviamos el Buffer para que form-data pueda calcular el Content-Length exacto
+    const ext = path.extname(chunk.blob).toLowerCase();
+    let contentType = 'audio/mpeg';
+    if (ext === '.mp4') contentType = 'video/mp4';
+    else if (ext === '.webm') contentType = 'video/webm';
+    else if (ext === '.wav') contentType = 'audio/wav';
+    else if (ext === '.m4a') contentType = 'audio/m4a';
+    else if (ext === '.flac') contentType = 'audio/flac';
+    else if (ext === '.ogg') contentType = 'audio/ogg';
+
     formData.append('file', fileBuffer, { 
       filename: path.basename(chunk.blob),
-      contentType: 'audio/mpeg' 
+      contentType 
     });
     
     formData.append('model', 'whisper-large-v3');
