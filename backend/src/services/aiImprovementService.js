@@ -218,7 +218,7 @@ async function callGroq(prompt, text, clientKey) {
   const response = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     {
-      model: 'llama-3.1-8b-instant', 
+      model: 'qwen/qwen3.8-27b', 
       messages: [
         { role: 'system', content: prompt },
         { role: 'user', content: text }
@@ -284,29 +284,52 @@ async function callOllama(prompt, text) {
   return response.data.response;
 }
 
+async function callOpenAI(prompt, text, clientKey) {
+  const apiKey = clientKey || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('MISSING_API_KEY: No hay API key configurada para OpenAI');
+  
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: text }
+        ],
+        temperature: 0.3
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    return response.data.choices[0].message.content;
+  } catch (error) {
+    if (error.response && error.response.status === 401) {
+      throw new Error('La API Key de OpenAI es inválida o no tiene permisos. Verifica que la llave sea correcta.');
+    }
+    if (error.response && error.response.status === 404) {
+      throw new Error('El modelo de OpenAI no existe o no tienes acceso. Verifica tu configuración.');
+    }
+    throw error;
+  }
+}
+
 async function improveContent(text, operation, provider = 'nvidia', clientKeys = {}) {
   const prompt = operation === 'mejorar_prompt' ? PROMPT_MEJORAR_PROMPT : PROMPT_MEJORAR_TEXTO;
   
   try {
     switch (provider) {
       case 'nvidia':
-        try {
-          return await callNvidia(prompt, text, clientKeys.nvidia);
-        } catch (err) {
-          if (err.message && err.message.includes('MISSING_API_KEY')) throw err;
-          console.warn('Error con NVIDIA, intentando fallback con Groq...', err.message);
-          if (err.response && err.response.data) {
-            console.warn('Detalle error NVIDIA:', JSON.stringify(err.response.data));
-          }
-          return await callGroq(prompt, text, clientKeys.groq);
-        }
+        return await callNvidia(prompt, text, clientKeys.nvidia);
       case 'ollama':
-        try {
-          return await callOllama(prompt, text);
-        } catch (err) {
-          console.warn('Error con Ollama, intentando fallback con Groq...', err.message);
-          return await callGroq(prompt, text, clientKeys.groq);
-        }
+        return await callOllama(prompt, text);
+      case 'openai':
+      case 'chatgpt':
+        return await callOpenAI(prompt, text, clientKeys.openai);
       case 'groq':
       default:
         return await callGroq(prompt, text, clientKeys.groq);

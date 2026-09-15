@@ -1,8 +1,19 @@
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-ffmpeg.setFfprobePath(ffprobeInstaller.path);
+const { execSync } = require('child_process');
+
+try {
+  execSync('ffprobe -version', { stdio: 'ignore' });
+  // Si el sistema tiene ffprobe/ffmpeg, fluent-ffmpeg los usará automáticamente
+  console.log('[Media] Usando ffmpeg y ffprobe del sistema');
+} catch (e) {
+  // Fallback a los binarios estáticos
+  console.log('[Media] Usando ffmpeg y ffprobe estáticos (npm)');
+  ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+  ffmpeg.setFfprobePath(ffprobeInstaller.path);
+}
+
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');

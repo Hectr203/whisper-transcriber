@@ -425,7 +425,7 @@ async function processTranscription({ localFilePath, originalBlobPath, originalN
 function formatErrorMessage(error) {
   const msg = error.message || '';
 
-  if (msg.includes('API key')) return 'Error de autenticación con OpenAI. Verifica tu API key.';
+  if (msg.includes('API key') || msg.includes('api_key')) return 'Error de autenticación (API Key inválida). Verifica tus credenciales de Groq o del proveedor seleccionado.';
   if (msg.includes('quota') || msg.includes('rate limit')) return 'Límite de la API alcanzado. Espera un momento e intenta de nuevo.';
   if (msg.includes('ffmpeg') || msg.includes('ffprobe')) return 'Error al procesar el audio. Asegúrate de que ffmpeg esté instalado.';
   if (msg.includes('cancelado')) return 'La transcripción fue cancelada.';
