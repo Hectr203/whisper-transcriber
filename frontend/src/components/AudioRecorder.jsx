@@ -147,6 +147,12 @@ export default function AudioRecorder({ onRecordComplete, disabled }) {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (audioBlob.size === 0) {
+          setError('La grabación está vacía. Asegúrate de hablar o revisar tu micrófono.');
+          stopMediaTracks();
+          cleanUpAudioAnalysis();
+          return;
+        }
         const audioFile = new File([audioBlob], `grabacion_${new Date().getTime()}.webm`, {
           type: 'audio/webm',
           lastModified: Date.now(),

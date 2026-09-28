@@ -411,12 +411,13 @@ export default function YouTubePanel({ onRefreshHistory }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
                   <CustomSelect
                     label="Formato de descarga"
-                    icon={videoFormat === 'video' ? Video : Headphones}
+                    icon={videoFormat === 'video' || videoFormat === 'video_only' ? Video : Headphones}
                     value={videoFormat}
                     onChange={setVideoFormat}
                     options={[
-                      { value: 'video', label: 'Video (MP4)' },
-                      { value: 'audio', label: 'Solo Audio (MP3)' }
+                      { value: 'video', label: 'Video (Con Audio)' },
+                      { value: 'video_only', label: 'Solo Video (Sin Audio)' },
+                      { value: 'audio', label: 'Solo Audio (MP3/M4A)' }
                     ]}
                   />
                   
@@ -425,10 +426,10 @@ export default function YouTubePanel({ onRefreshHistory }) {
                     value={selectedQuality}
                     onChange={setSelectedQuality}
                     options={[
-                      { value: 'default', label: `La mejor posible (~${videoFormat === 'video' ? resultData.estimatedVideoMB : resultData.estimatedAudioMB} MB)` },
+                      { value: 'default', label: `La mejor posible (~${videoFormat === 'video' || videoFormat === 'video_only' ? resultData.estimatedVideoMB : resultData.estimatedAudioMB} MB)` },
                       ...(resultData.formats[videoFormat]?.map(f => ({
                         value: f.itag,
-                        label: videoFormat === 'video' ? `Video: ${f.qualityLabel}` : `Audio: ${f.audioBitrate}kbps`
+                        label: videoFormat === 'video' || videoFormat === 'video_only' ? `Video: ${f.qualityLabel}` : `Audio: ${f.audioBitrate}kbps`
                       })) || [])
                     ]}
                   />
@@ -441,7 +442,7 @@ export default function YouTubePanel({ onRefreshHistory }) {
                   onClick={downloadSingleVideo}
                   className="flex-1 flex justify-center items-center gap-2 px-6 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 rounded-xl font-bold transition-transform active:scale-95 shadow-md"
                 >
-                  <Download size={20} /> Obtener {videoFormat === 'video' ? 'Video' : 'Audio'}
+                  <Download size={20} /> Obtener {videoFormat === 'video' ? 'Video' : videoFormat === 'video_only' ? 'Video sin audio' : 'Audio'}
                 </button>
                 <button
                   onClick={handleTranscribe}
@@ -477,7 +478,8 @@ export default function YouTubePanel({ onRefreshHistory }) {
                     value={globalFormat}
                     onChange={setGlobalFormat}
                     options={[
-                      { value: 'video', label: 'Descargar en Video' },
+                      { value: 'video', label: 'Descargar en Video (Con Audio)' },
+                      { value: 'video_only', label: 'Descargar Solo Video (Sin Audio)' },
                       { value: 'audio', label: 'Descargar en Audio' }
                     ]}
                   />

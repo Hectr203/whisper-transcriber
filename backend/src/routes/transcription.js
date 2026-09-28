@@ -4,9 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { upload } = require('../middleware/uploadMiddleware');
-const { splitAudio, splitAudioIntoEqualParts, splitVideoIntoEqualParts, cleanupChunks, extractAudioIfVideo, analyzeMedia } = require('../services/audioSplitter');
+const { splitAudio, splitAudioIntoEqualParts, splitVideoIntoEqualParts, cleanupChunks, extractAudioIfVideo, extractVideoOnly, analyzeMedia } = require('../services/audioSplitter');
 const { transcribeChunks } = require('../services/whisperService');
 const azureBlobService = require('../services/azureBlobService');
+const { v4: uuidv4 } = require('uuid');
 
 // Map para gestionar conexiones SSE activas
 const activeJobs = new Map();
@@ -23,9 +24,20 @@ router.post('/upload', (req, res, next) => {
     if (err) return next(err);
 
     if (!req.file) {
+      console.log('[Upload] NO FILE IN REQ. Body:', req.body, 'Headers:', req.headers);
       return res.status(400).json({
         error: 'No se recibió archivo',
         message: 'Envía un archivo de audio en el campo "audio"',
+      });
+    }
+
+    console.log('[Upload] Received file:', { size: req.file.size, originalname: req.file.originalname });
+
+    if (req.file.size === 0) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({
+        error: 'Archivo vacío',
+        message: 'El archivo enviado está vacío (0 bytes).',
       });
     }
 
@@ -118,6 +130,11 @@ router.post('/split', (req, res, next) => {
       return res.status(400).json({ error: 'No se recibió archivo', message: 'Envía un archivo en el campo "audio"' });
     }
 
+    if (req.file.size === 0) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'Archivo vacío', message: 'El archivo enviado está vacío (0 bytes).' });
+    }
+
     const parts = Number.parseInt(req.body.parts, 10);
     if (!Number.isInteger(parts) || parts < 1 || parts > 100) {
       fs.rm(req.file.path, { force: true }, () => {});
@@ -197,10 +214,79 @@ router.post('/split', (req, res, next) => {
       res.status(500).json({ error: 'Error al dividir el archivo', message: error.message });
     } finally {
       fs.rm(req.file.path, { force: true }, () => {});
-      if (fileToClean && fileToClean !== req.file.path) fs.rm(fileToClean, { force: true }, () => {});
-      cleanupChunks(chunkInfo.map(c => c.local), null);
     }
   });
+});
+
+router.post('/extract', (req, res, next) => {
+  upload.single('file')(req, res, async (err) => {
+    if (err) return next(err);
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se recibió archivo' });
+    }
+
+    const formatType = req.body.formatType || 'audio'; // 'audio' o 'video_only'
+    const sessionId = uuidv4 ? uuidv4() : req.file.filename;
+    let processedFilePath = null;
+
+    try {
+      if (formatType === 'audio') {
+        processedFilePath = await extractAudioIfVideo(req.file.path);
+      } else if (formatType === 'video_only') {
+        processedFilePath = await extractVideoOnly(req.file.path);
+      } else {
+        throw new Error('Tipo de formato no soportado');
+      }
+
+      const ext = formatType === 'audio' ? 'mp3' : 'mp4';
+      const mime = formatType === 'audio' ? 'audio/mpeg' : 'video/mp4';
+      const originalBase = safeFileName(req.file.originalname).replace(/\.[^.]+$/, '');
+      const downloadName = `${originalBase}_${formatType}.${ext}`;
+      
+      const blobPath = `temporales/extractor/${sessionId}/extracted.${ext}`;
+      await azureBlobService.subirArchivo(processedFilePath, blobPath, {
+        mimetype: mime,
+        jobId: sessionId,
+        metadata: { source: 'extractor', originalName: req.file.originalname }
+      });
+
+      res.json({
+        sessionId,
+        fileName: downloadName,
+        formatType,
+        downloadUrl: `/api/transcription/extract/download/${sessionId}/${ext}`
+      });
+    } catch (error) {
+      console.error('[Extract] Error:', error.message);
+      res.status(500).json({ error: 'Error al extraer', message: error.message });
+    } finally {
+      fs.rm(req.file.path, { force: true }, () => {});
+      if (processedFilePath && processedFilePath !== req.file.path) fs.rm(processedFilePath, { force: true }, () => {});
+    }
+  });
+});
+
+router.get('/extract/download/:sessionId/:ext', async (req, res) => {
+  const { sessionId, ext } = req.params;
+  const mime = ext === 'mp4' ? 'video/mp4' : 'audio/mpeg';
+  const blobPath = `temporales/extractor/${sessionId}/extracted.${ext}`;
+
+  try {
+    if (!(await azureBlobService.existeArchivo(blobPath))) {
+      return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `attachment; filename="extracted_${sessionId}.${ext}"`);
+    const stream = await azureBlobService.obtenerFlujoArchivo(blobPath);
+    stream.on('error', (error) => {
+      console.error('[Download extract] Error:', error.message);
+      if (!res.headersSent) res.status(500).end();
+    });
+    stream.pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: 'Error descargando archivo', message: error.message });
+  }
 });
 
 router.get('/chunks/:sessionId/:chunkId/download', async (req, res) => {
@@ -427,7 +513,8 @@ function formatErrorMessage(error) {
 
   if (msg.includes('API key') || msg.includes('api_key')) return 'Error de autenticación (API Key inválida). Verifica tus credenciales de Groq o del proveedor seleccionado.';
   if (msg.includes('quota') || msg.includes('rate limit')) return 'Límite de la API alcanzado. Espera un momento e intenta de nuevo.';
-  if (msg.includes('ffmpeg') || msg.includes('ffprobe')) return 'Error al procesar el audio. Asegúrate de que ffmpeg esté instalado.';
+  if (msg.includes('No se pudo analizar el archivo') || msg.includes('ffprobe exited with code 1')) return 'El archivo de audio o video es inválido, está corrupto o tiene un formato no soportado.';
+  if (msg.includes('ffmpeg') || msg.includes('ffprobe')) return 'Error al procesar el audio. Verifica que el archivo sea un formato de audio válido.';
   if (msg.includes('cancelado')) return 'La transcripción fue cancelada.';
   if (msg.includes('vacía')) return msg;
 

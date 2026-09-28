@@ -6,6 +6,7 @@ import ProgressBar from './components/ProgressBar';
 import TextEditorTTS from './components/TextEditorTTS';
 import HistoryPanel from './components/HistoryPanel';
 import YouTubePanel from './components/YouTubePanel';
+import MediaExtractorPanel from './components/MediaExtractorPanel';
 import ApiKeysConfig from './components/ApiKeysConfig';
 import ThemeSelector from './components/ThemeSelector';
 import { saveHistoryItem, getHistoryItems, clearHistoryItems } from './utils/historyStorage';
@@ -478,6 +479,16 @@ export default function App() {
                 División de Multimedia
               </button>
               <button
+                onClick={() => setActiveTab('extractor')}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-colors ${
+                  activeTab === 'extractor'
+                    ? 'border-primary-600 text-primary-600 dark:border-primary-500 dark:text-primary-400'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                Extraer Medio
+              </button>
+              <button
                 onClick={() => setActiveTab('youtube')}
                 className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-semibold transition-colors ${
                   activeTab === 'youtube'
@@ -572,6 +583,14 @@ export default function App() {
               División de Multimedia
             </button>
             <button
+              onClick={() => { setActiveTab('extractor'); setMobileMenuOpen(false); }}
+              className={`block w-full text-left pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                activeTab === 'extractor' ? 'bg-primary-50 border-primary-600 text-primary-700 dark:bg-primary-900/20 dark:border-primary-500 dark:text-primary-400' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              Extraer Medio
+            </button>
+            <button
               onClick={() => { setActiveTab('youtube'); setMobileMenuOpen(false); }}
               className={`block w-full text-left pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
                 activeTab === 'youtube' ? 'bg-primary-50 border-primary-600 text-primary-700 dark:bg-primary-900/20 dark:border-primary-500 dark:text-primary-400' : 'border-transparent text-slate-500 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
@@ -617,6 +636,13 @@ export default function App() {
               onLoadItem={handleLoadHistoryItem} 
               onClearHistory={handleClearHistory}
             />
+          </div>
+        )}
+
+        {/* EXTRACTOR TAB */}
+        {activeTab === 'extractor' && (
+          <div className="flex-1 overflow-y-auto min-h-0 pt-6">
+            <MediaExtractorPanel />
           </div>
         )}
 

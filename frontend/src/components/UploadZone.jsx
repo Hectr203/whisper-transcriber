@@ -12,6 +12,9 @@ export default function UploadZone({ onFileSelected, disabled, acceptedFormatTyp
   const [localError, setLocalError] = useState('');
 
   const validateFile = useCallback((file) => {
+    if (file.size === 0) {
+      return 'El archivo está vacío (0 bytes).';
+    }
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     const typeOk = ALLOWED_TYPES.includes(file.type) || ALLOWED_EXTS.includes(ext);
     if (!typeOk) {

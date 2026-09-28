@@ -60,6 +60,7 @@ class YouTubeService {
       const formats = info.formats || [];
       const videoFormats = formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none');
       const audioFormats = formats.filter(f => f.vcodec === 'none' && f.acodec !== 'none');
+      const videoOnlyFormats = formats.filter(f => f.vcodec !== 'none' && f.acodec === 'none');
 
       return {
         type: 'video',
@@ -74,6 +75,7 @@ class YouTubeService {
         estimatedAudioMB: 'Desconocido',
         formats: {
           video: videoFormats.map(f => ({ itag: f.format_id, qualityLabel: f.format_note || f.resolution, container: f.ext })),
+          video_only: videoOnlyFormats.map(f => ({ itag: f.format_id, qualityLabel: f.format_note || f.resolution, container: f.ext })),
           audio: audioFormats.map(f => ({ itag: f.format_id, audioBitrate: f.abr, container: f.ext }))
         }
       };
@@ -135,44 +137,96 @@ class YouTubeService {
       console.log('[YouTubeService] No se pudo obtener título rápido, usando nombre genérico');
     }
 
-    let extension = formatType === 'audio' ? 'mp3' : 'mp4';
+    let extension = formatType === 'audio' ? 'm4a' : 'mp4';
     let formatStr = '';
 
     if (itag && itag !== 'default') {
-      formatStr = `${itag}`;
-      if (formatType === 'audio') extension = 'm4a';
+      if (formatType === 'audio') {
+        formatStr = `${itag}`;
+        extension = 'm4a';
+      } else if (formatType === 'video_only') {
+        formatStr = `${itag}`;
+        extension = 'mp4';
+      } else {
+        formatStr = `${itag}+bestaudio/best`;
+        extension = 'mp4';
+      }
     } else {
-      formatStr = formatType === 'audio' ? 'bestaudio' : 'best';
+      if (formatType === 'audio') {
+        formatStr = 'bestaudio[ext=m4a]/bestaudio';
+      } else if (formatType === 'video_only') {
+        formatStr = 'bestvideo[ext=mp4]/bestvideo';
+      } else {
+        // Preferir m4a para audio, para video combinar el mejor video mp4 con el mejor audio
+        formatStr = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
+      }
     }
 
     res.setHeader('Content-Disposition', `attachment; filename="youtube_${title}.${extension}"`);
     if (formatType === 'audio') {
-       res.setHeader('Content-Type', 'audio/mpeg');
+       res.setHeader('Content-Type', extension === 'm4a' ? 'audio/mp4' : 'audio/mpeg');
     } else {
-       res.setHeader('Content-Type', `video/${extension}`);
+       res.setHeader('Content-Type', `video/mp4`);
     }
 
-    console.log(`[YouTubeService] Iniciando subprocess yt-dlp para transmitir (pipe) hacia cliente...`);
-    const subprocess = youtubedl.exec(url, {
-      o: '-',
-      f: formatStr,
-      noPlaylist: true,
-      noCheckCertificates: true,
-      noWarnings: true
-    }, { stdio: ['ignore', 'pipe', 'ignore'] });
+    if (formatType === 'video') {
+      console.log(`[YouTubeService] Iniciando descarga local temporal para fusionar video y audio...`);
+      const tempDir = path.join(os.tmpdir(), `whisper_transcriber_yt_vid`);
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+      const localFilePath = path.join(tempDir, `vid_${Date.now()}.mp4`);
 
-    subprocess.stdout.pipe(res);
-    
-    subprocess.on('close', () => console.log(`[YouTubeService] Streaming completado exitosamente.`));
-
-    subprocess.on('error', (err) => {
-      console.error('[YouTubeService] Error en proceso de streaming yt-dlp:', err);
-      if (!res.headersSent) {
-        res.status(500).send('Error durante la descarga.');
-      } else {
-        res.end();
+      try {
+        await youtubedl(url, {
+          o: localFilePath,
+          f: formatStr,
+          mergeOutputFormat: 'mp4',
+          noPlaylist: true,
+          noCheckCertificates: true,
+          noWarnings: true
+        });
+        
+        console.log(`[YouTubeService] Descarga y fusión completada. Enviando al cliente...`);
+        const readStream = fs.createReadStream(localFilePath);
+        readStream.pipe(res);
+        readStream.on('end', () => {
+           console.log(`[YouTubeService] Envío completado. Eliminando temporal...`);
+           fs.unlink(localFilePath, () => {});
+        });
+        readStream.on('error', (err) => {
+           console.error('[YouTubeService] Error leyendo archivo temporal:', err);
+           res.end();
+           fs.unlink(localFilePath, () => {});
+        });
+      } catch (err) {
+        console.error('[YouTubeService] Error en proceso de descarga yt-dlp:', err.message);
+        if (!res.headersSent) res.status(500).send('Error durante la descarga.');
+        else res.end();
       }
-    });
+    } else {
+      console.log(`[YouTubeService] Iniciando subprocess yt-dlp para transmitir (pipe) audio o video puro hacia cliente...`);
+      const subprocess = youtubedl.exec(url, {
+        o: '-',
+        f: formatStr,
+        noPlaylist: true,
+        noCheckCertificates: true,
+        noWarnings: true
+      }, { stdio: ['ignore', 'pipe', 'ignore'] });
+
+      subprocess.stdout.pipe(res);
+      
+      subprocess.on('close', () => console.log(`[YouTubeService] Streaming completado exitosamente.`));
+
+      // Prevenir crash si el cliente cancela la descarga o falla yt-dlp
+      subprocess.catch((err) => {
+        console.log(`[YouTubeService] Proceso yt-dlp finalizó (cliente desconectado o error): ${err.message}`);
+      });
+
+      subprocess.on('error', (err) => {
+        console.error('[YouTubeService] Error en proceso de streaming yt-dlp:', err);
+        if (!res.headersSent) res.status(500).send('Error durante la descarga.');
+        else res.end();
+      });
+    }
   }
 
   /**

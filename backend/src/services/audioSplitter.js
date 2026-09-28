@@ -86,6 +86,46 @@ async function extractAudioIfVideo(inputPath, onProgress = () => {}) {
 }
 
 /**
+ * Extrae video puro (sin audio) de un archivo multimedia
+ */
+async function extractVideoOnly(inputPath, onProgress = () => {}) {
+  const { hasVideo } = await analyzeMedia(inputPath);
+  
+  if (!hasVideo) {
+    throw new Error('El archivo no contiene video.');
+  }
+
+  console.log(`[Media] Video detectado. Extrayendo pista de video puro (sin audio)...`);
+  const sessionId = uuidv4();
+  const outputPath = path.join(tempDir, `extracted_vid_${sessionId}.mp4`);
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .noAudio()
+      .videoCodec('copy') // Intentar copiar el codec para que sea muy rápido
+      .format('mp4')
+      .on('progress', (progress) => onProgress(progress))
+      .on('end', () => {
+        console.log(`[Media] Video sin audio extraído con éxito: ${outputPath}`);
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        console.warn(`[Media] Error copiando codec, intentando recodificar... ${err.message}`);
+        // Fallback a recodificar si copy falla (por incompatibilidad de formato)
+        ffmpeg(inputPath)
+          .noAudio()
+          .videoCodec('libx264')
+          .outputOptions(['-preset ultrafast', '-crf 22'])
+          .format('mp4')
+          .on('end', () => resolve(outputPath))
+          .on('error', (err2) => reject(new Error(`Error al extraer video puro: ${err2.message}`)))
+          .save(outputPath);
+      })
+      .save(outputPath);
+  });
+}
+
+/**
  * Obtiene el tamaño de un archivo en MB
  */
 function getFileSizeMB(filePath) {
@@ -285,4 +325,5 @@ module.exports = {
   getAudioDuration,
   analyzeMedia,
   extractAudioIfVideo,
+  extractVideoOnly,
 };
