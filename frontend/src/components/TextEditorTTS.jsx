@@ -11,9 +11,9 @@ const WordToken = React.memo(({ token, isActive, onClick }) => {
   return (
     <span
       onClick={() => onClick(token.charIndex)}
-      className={`cursor-pointer px-1 py-0.5 rounded transition-all duration-100 ${
+      className={`cursor-pointer px-1 py-0.5 rounded transition-colors duration-75 ${
         isActive 
-          ? 'bg-primary-500 text-white shadow-md scale-105 inline-block opacity-100 font-semibold' 
+          ? 'bg-primary-500 text-white opacity-100' 
           : 'hover:bg-primary-50 dark:hover:bg-primary-900/30 opacity-80 hover:opacity-100'
       }`}
       title="Clic para reproducir desde aquí"
@@ -324,22 +324,28 @@ export default function TextEditorTTS({
       }
     }
 
-    let hasNativeBoundaries = false;
     let speechStartTime = Date.now();
     let totalPauseTime = 0;
     let pauseTimestamp = null;
     let maxCharIndexReached = offsetIndex;
 
-    const { getWordAtTime } = buildSpeechTimeline(mappedWords, sliceBuffer, adaptedRate);
+    const { getWordAtTime, getWordByGlobalCharIndex } = buildSpeechTimeline(mappedWords, sliceBuffer, adaptedRate);
 
+    // Sincronización híbrida: onboundary calibra el reloj y da precisión instantánea,
+    // mientras que el intervalo garantiza que TODAS las palabras intermedias se iluminen de forma continua.
     utterance.onboundary = (e) => {
-      hasNativeBoundaries = true;
-      if (e && typeof e.charIndex === 'number') {
+      if (e && typeof e.charIndex === 'number' && e.name !== 'sentence') {
         const globalIdx = getGlobalCharIndex(e.charIndex);
-        // Protección contra saltos hacia atrás por jitter o resets del motor de voz
         if (globalIdx >= maxCharIndexReached) {
           maxCharIndexReached = globalIdx;
           setActiveCharIndex(globalIdx);
+
+          // Calibrar el reloj del timeline con la posición real reportada por el sintetizador
+          const matched = getWordByGlobalCharIndex(globalIdx);
+          if (matched && matched.startTimeMs !== undefined) {
+            speechStartTime = Date.now() - matched.startTimeMs;
+            totalPauseTime = 0;
+          }
         }
       }
     };
@@ -355,8 +361,7 @@ export default function TextEditorTTS({
         speechIntervalRef.current = null;
       }
 
-      // Tracker continuo: si la voz no emite onboundary (como Microsoft Elena Online en Edge/Chrome),
-      // este intervalo avanza el sombreado de forma fluida y continua palabra por palabra.
+      // Intervalo de avance continuo: avanza palabra por palabra sin saltarse ninguna
       speechIntervalRef.current = setInterval(() => {
         if (utteranceRef.current !== utterance) {
           if (speechIntervalRef.current) {
@@ -374,20 +379,15 @@ export default function TextEditorTTS({
           pauseTimestamp = null;
         }
 
-        // Si la voz nativa ya está emitiendo onboundary de manera continua, no interferir
-        if (hasNativeBoundaries) {
-          return;
-        }
-
         const now = Date.now();
-        // Para voces online o cuando no hay onboundary, avanzar según el tiempo transcurrido
+        // Avanzar suavemente según el tiempo transcurrido
         const elapsed = Math.max(0, now - speechStartTime - totalPauseTime);
         const currentWord = getWordAtTime(elapsed);
         if (currentWord && currentWord.globalCharIndex >= maxCharIndexReached) {
           maxCharIndexReached = currentWord.globalCharIndex;
           setActiveCharIndex(currentWord.globalCharIndex);
         }
-      }, 50);
+      }, 40);
     };
 
     utterance.onend = (e) => {

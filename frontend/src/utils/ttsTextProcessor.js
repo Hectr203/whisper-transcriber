@@ -206,6 +206,10 @@ export function buildSpeechTimeline(words = [], speechText = '', speechRate = 1)
     return next || timeline[timeline.length - 1];
   };
 
-  return { timeline, totalDurationMs: accumulatedMs, getWordAtTime };
+  const getWordByGlobalCharIndex = (globalIdx) => {
+    return timeline.find(item => item.globalCharIndex === globalIdx);
+  };
+
+  return { timeline, totalDurationMs: accumulatedMs, getWordAtTime, getWordByGlobalCharIndex };
 }
 
