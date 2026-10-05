@@ -91,16 +91,38 @@ export default function InteractiveMarkdown({
     return () => document.removeEventListener('mousedown', handleDocumentClick);
   }, []);
 
-  // Auto-scroll hacia la palabra activa
+  // Resaltado de palabra activa y auto-scroll sin reconstruir el DOM de ReactMarkdown
   useEffect(() => {
-    if (activeCharIndex < 0 || !actualContainerRef.current) return;
-    const activeEl = actualContainerRef.current.querySelector(`[data-char-index="${activeCharIndex}"]`);
+    if (!actualContainerRef.current) return;
+    const container = actualContainerRef.current;
+
+    // Remover clase activa previa
+    const prevActive = container.querySelectorAll('.tts-word-active');
+    prevActive.forEach(el => {
+      el.classList.remove('tts-word-active', 'bg-primary-500', 'text-white', 'shadow-md', 'scale-105', 'font-semibold');
+      el.classList.add('opacity-90');
+    });
+
+    if (activeCharIndex < 0) return;
+
+    // Buscar el elemento que coincida con activeCharIndex o contenga el índice
+    let activeEl = container.querySelector(`[data-char-index="${activeCharIndex}"]`);
+    if (!activeEl) {
+      const allWords = Array.from(container.querySelectorAll('.tts-word'));
+      activeEl = allWords.find(el => {
+        const cIdx = parseInt(el.dataset.charIndex, 10);
+        return activeCharIndex >= cIdx && activeCharIndex < cIdx + el.textContent.length;
+      });
+    }
+
     if (activeEl) {
+      activeEl.classList.remove('opacity-90');
+      activeEl.classList.add('tts-word-active', 'bg-primary-500', 'text-white', 'shadow-md', 'scale-105', 'font-semibold');
       activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [activeCharIndex, actualContainerRef]);
 
-  // Construcción de componentes personalizados para ReactMarkdown
+  // Construcción de componentes personalizados para ReactMarkdown (estable, sin re-crear en cada palabra)
   const customComponents = useMemo(() => {
     let searchOffset = 0;
 
@@ -120,30 +142,23 @@ export default function InteractiveMarkdown({
           elements.push(textStr.substring(lastIdx, matchStart));
         }
 
-        // Buscar coincidencia exacta en el markdown original a partir de searchOffset
+        // Buscar coincidencia exacta en el markdown original avanzando secuencialmente
         let wordCharIndex = markdown.indexOf(word, searchOffset);
         if (wordCharIndex === -1) {
-          // Fallback buscando desde el inicio
           wordCharIndex = markdown.indexOf(word);
         } else {
           searchOffset = wordCharIndex + word.length;
         }
 
-        const isActive = activeCharIndex >= wordCharIndex && activeCharIndex < (wordCharIndex + word.length);
-
         elements.push(
           <span
-            key={`mw_${wordCharIndex}_${matchStart}`}
+            key={`mw_${wordCharIndex}_${matchStart}_${Math.random().toString(36).substring(2, 6)}`}
             data-char-index={wordCharIndex}
             onClick={(e) => {
               e.stopPropagation();
               onWordClick(wordCharIndex);
             }}
-            className={`tts-word cursor-pointer rounded px-0.5 transition-all duration-100 ${
-              isActive
-                ? 'bg-primary-500 text-white shadow-md scale-105 inline-block font-semibold'
-                : 'hover:bg-primary-100 dark:hover:bg-primary-900/40 opacity-90 hover:opacity-100'
-            }`}
+            className="tts-word cursor-pointer rounded px-0.5 transition-all duration-100 hover:bg-primary-100 dark:hover:bg-primary-900/40 opacity-90 hover:opacity-100 inline"
             title="Clic para reproducir desde aquí"
           >
             {word}
@@ -192,8 +207,51 @@ export default function InteractiveMarkdown({
       td: makeInteractive('td'),
       strong: makeInteractive('strong'),
       em: makeInteractive('em'),
+      del: makeInteractive('del'),
+      a: makeInteractive('a'),
+      table: ({ children, ...props }) => (
+        <div className="overflow-x-auto my-4 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
+          <table {...props} className="w-full text-left border-collapse not-prose">
+            {children}
+          </table>
+        </div>
+      ),
+      thead: ({ children, ...props }) => (
+        <thead {...props} className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700">
+          {children}
+        </thead>
+      ),
+      tbody: ({ children, ...props }) => (
+        <tbody {...props} className="divide-y divide-slate-200 dark:divide-slate-800">
+          {children}
+        </tbody>
+      ),
+      tr: ({ children, ...props }) => (
+        <tr {...props} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+          {children}
+        </tr>
+      ),
+      pre: ({ children, ...props }) => (
+        <pre {...props} className="bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto my-3 font-mono text-sm leading-relaxed">
+          {processChildren(children)}
+        </pre>
+      ),
+      code: ({ node, inline, className, children, ...props }) => {
+        if (inline) {
+          return (
+            <code {...props} className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-sm text-primary-600 dark:text-primary-400">
+              {processChildren(children)}
+            </code>
+          );
+        }
+        return (
+          <code {...props} className="font-mono text-sm block">
+            {processChildren(children)}
+          </code>
+        );
+      },
     };
-  }, [markdown, activeCharIndex, onWordClick]);
+  }, [markdown, onWordClick]);
 
   return (
     <div

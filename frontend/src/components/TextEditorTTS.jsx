@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles, User, Settings2, Trash2 } from 'lucide-react';
 import { generateHash, getTTSAudio, saveTTSAudio } from '../utils/historyStorage';
 import { detectMarkdownContent } from '../utils/markdownDetector';
+import { prepareTTSContent } from '../utils/ttsTextProcessor';
 import InteractiveMarkdown from './InteractiveMarkdown';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -187,19 +188,8 @@ export default function TextEditorTTS({
       return;
     }
 
-    let sliceBuffer = rawSlice;
-    if (isMarkdownMode) {
-      // Si estamos en modo markdown, limpiamos el texto para que la lectura sea natural
-      sliceBuffer = sliceBuffer
-        .replace(/^#{1,6}\s+/gm, '')
-        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-        .replace(/[*_~`]/g, '')
-        .replace(/^\s*[-*+]\s+/gm, '')
-        .replace(/^\s*\d+\.\s+/gm, '')
-        .replace(/^>\s+/gm, '')
-        .trim();
-      if (!sliceBuffer) sliceBuffer = rawSlice; // fallback
-    }
+    const { speechText, getGlobalCharIndex } = prepareTTSContent(text, offsetIndex, isMarkdownMode);
+    const sliceBuffer = speechText || rawSlice;
 
     if (useAITTS) {
       setPlayState('playing');
@@ -262,8 +252,9 @@ export default function TextEditorTTS({
         audio.ontimeupdate = () => {
           if (audio.duration) {
              const progress = audio.currentTime / audio.duration;
-             const estimatedCharIndex = Math.floor(rawSlice.length * progress);
-             setActiveCharIndex(offsetIndex + estimatedCharIndex);
+             const estimatedCharIndex = Math.floor(sliceBuffer.length * progress);
+             const globalIdx = getGlobalCharIndex(estimatedCharIndex);
+             setActiveCharIndex(globalIdx);
           }
         };
 
@@ -320,43 +311,61 @@ export default function TextEditorTTS({
       }
     }
 
+    let hasNativeBoundaries = false;
+    let fallbackTimeout = null;
+
     utterance.onboundary = (e) => {
+      hasNativeBoundaries = true;
+      if (simulationInterval) {
+        clearInterval(simulationInterval);
+        simulationInterval = null;
+      }
+      if (fallbackTimeout) {
+        clearTimeout(fallbackTimeout);
+        fallbackTimeout = null;
+      }
       if (e && typeof e.charIndex === 'number') {
-        setActiveCharIndex(offsetIndex + e.charIndex);
+        const globalIdx = getGlobalCharIndex(e.charIndex);
+        setActiveCharIndex(globalIdx);
       }
     };
-
-    let simulationInterval = null;
 
     utterance.onstart = () => {
       setPlayState('playing');
       if (!isEdge) {
-        const charsPerSec = 15 * adaptedRate;
-        let elapsedMs = 0;
-        let lastTick = Date.now();
-        
-        simulationInterval = setInterval(() => {
-          const now = Date.now();
-          const delta = now - lastTick;
-          lastTick = now;
-          
+        // Fallback de seguridad: SOLO se activa si después de 600ms NO hubo ningún evento nativo onboundary
+        fallbackTimeout = setTimeout(() => {
+          if (hasNativeBoundaries) return;
           if (utteranceRef.current !== utterance) return;
-          if (isPausedRef.current || window.speechSynthesis.paused) return; 
           
-          elapsedMs += delta;
-          const estimatedChar = Math.floor((elapsedMs / 1000) * charsPerSec);
+          const charsPerSec = 14 * adaptedRate;
+          let elapsedMs = 600;
+          let lastTick = Date.now();
           
-          if (estimatedChar < rawSlice.length) {
-             setActiveCharIndex((prev) => {
-               if (prev > offsetIndex + estimatedChar + 10) return prev;
-               return offsetIndex + estimatedChar;
-             });
-          }
-        }, 100);
+          simulationInterval = setInterval(() => {
+            const now = Date.now();
+            const delta = now - lastTick;
+            lastTick = now;
+            
+            if (hasNativeBoundaries || utteranceRef.current !== utterance) {
+              clearInterval(simulationInterval);
+              simulationInterval = null;
+              return;
+            }
+            if (isPausedRef.current || window.speechSynthesis.paused) return; 
+            
+            elapsedMs += delta;
+            const estimatedChar = Math.floor((elapsedMs / 1000) * charsPerSec);
+            if (estimatedChar < sliceBuffer.length) {
+              setActiveCharIndex(getGlobalCharIndex(estimatedChar));
+            }
+          }, 100);
+        }, 600);
       }
     };
 
     utterance.onend = (e) => {
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
       if (simulationInterval) clearInterval(simulationInterval);
       if (utteranceRef.current !== utterance) return;
       utteranceRef.current = null;
@@ -365,6 +374,7 @@ export default function TextEditorTTS({
     };
 
     utterance.onerror = (e) => {
+      if (fallbackTimeout) clearTimeout(fallbackTimeout);
       if (simulationInterval) clearInterval(simulationInterval);
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
         console.error("Error en SpeechSynthesis:", e);
