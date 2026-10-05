@@ -8,16 +8,8 @@ import InteractiveMarkdown from './InteractiveMarkdown';
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const WordToken = React.memo(({ token, isActive, onClick }) => {
-  const spanRef = useRef(null);
-  useEffect(() => {
-    if (isActive && spanRef.current) {
-      spanRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [isActive]);
-
   return (
     <span
-      ref={spanRef}
       onClick={() => onClick(token.charIndex)}
       className={`cursor-pointer px-1 py-0.5 rounded transition-all duration-100 ${
         isActive 
@@ -336,7 +328,7 @@ export default function TextEditorTTS({
     let speechStartTime = Date.now();
     let totalPauseTime = 0;
     let pauseTimestamp = null;
-    let lastKeepAliveTimestamp = Date.now();
+    let maxCharIndexReached = offsetIndex;
 
     const { getWordAtTime } = buildSpeechTimeline(mappedWords, sliceBuffer, adaptedRate);
 
@@ -344,7 +336,11 @@ export default function TextEditorTTS({
       hasNativeBoundaries = true;
       if (e && typeof e.charIndex === 'number') {
         const globalIdx = getGlobalCharIndex(e.charIndex);
-        setActiveCharIndex(globalIdx);
+        // Protección contra saltos hacia atrás por jitter o resets del motor de voz
+        if (globalIdx >= maxCharIndexReached) {
+          maxCharIndexReached = globalIdx;
+          setActiveCharIndex(globalIdx);
+        }
       }
     };
 
@@ -353,7 +349,6 @@ export default function TextEditorTTS({
       speechStartTime = Date.now();
       totalPauseTime = 0;
       pauseTimestamp = null;
-      lastKeepAliveTimestamp = Date.now();
 
       if (speechIntervalRef.current) {
         clearInterval(speechIntervalRef.current);
@@ -379,27 +374,17 @@ export default function TextEditorTTS({
           pauseTimestamp = null;
         }
 
-        const now = Date.now();
-
-        // Workaround para bug de 14 segundos en Chromium (Edge/Chrome):
-        // reactivar periódicamente para evitar pausas silenciosas del navegador
-        if (now - lastKeepAliveTimestamp > 10000) {
-          lastKeepAliveTimestamp = now;
-          if (window.speechSynthesis && window.speechSynthesis.speaking && !isPausedRef.current) {
-            window.speechSynthesis.pause();
-            window.speechSynthesis.resume();
-          }
-        }
-
         // Si la voz nativa ya está emitiendo onboundary de manera continua, no interferir
         if (hasNativeBoundaries) {
           return;
         }
 
+        const now = Date.now();
         // Para voces online o cuando no hay onboundary, avanzar según el tiempo transcurrido
         const elapsed = Math.max(0, now - speechStartTime - totalPauseTime);
         const currentWord = getWordAtTime(elapsed);
-        if (currentWord) {
+        if (currentWord && currentWord.globalCharIndex >= maxCharIndexReached) {
+          maxCharIndexReached = currentWord.globalCharIndex;
           setActiveCharIndex(currentWord.globalCharIndex);
         }
       }, 50);

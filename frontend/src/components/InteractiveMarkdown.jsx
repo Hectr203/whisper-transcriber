@@ -93,12 +93,13 @@ export default function InteractiveMarkdown({
 
   const renderOffsetRef = useRef(0);
   const renderKeyCounterRef = useRef(0);
+  const lastActiveWordIndexRef = useRef(0);
 
   // Reiniciar el cursor de búsqueda y el contador de tokens al iniciar cada renderizado
   renderOffsetRef.current = 0;
   renderKeyCounterRef.current = 0;
 
-  // Resaltado de palabra activa y auto-scroll sin reconstruir el DOM de ReactMarkdown
+  // Resaltado de palabra activa sin scroll forzado ni saltos hacia atrás
   useEffect(() => {
     if (!actualContainerRef.current) return;
     const container = actualContainerRef.current;
@@ -110,40 +111,74 @@ export default function InteractiveMarkdown({
       el.classList.add('opacity-90');
     });
 
-    if (activeCharIndex < 0) return;
+    if (activeCharIndex < 0) {
+      lastActiveWordIndexRef.current = 0;
+      return;
+    }
 
-    // Buscar el elemento que coincida con activeCharIndex o contenga el índice
-    let activeEl = container.querySelector(`[data-char-index="${activeCharIndex}"]`);
     const allWords = Array.from(container.querySelectorAll('.tts-word'));
-    if (!activeEl && allWords.length > 0) {
-      activeEl = allWords.find(el => {
-        const cIdx = parseInt(el.dataset.charIndex, 10);
-        return activeCharIndex >= cIdx && activeCharIndex < cIdx + el.textContent.length;
-      });
+    if (allWords.length === 0) return;
 
-      // Si no hay coincidencia exacta de rango (ej. saltos de formato markdown o puntuación),
-      // asociar a la palabra más cercana en un umbral seguro para evitar parpadeos
-      if (!activeEl) {
-        let closest = null;
-        let minDiff = Infinity;
-        for (const el of allWords) {
-          const cIdx = parseInt(el.dataset.charIndex, 10);
-          const diff = Math.abs(cIdx - activeCharIndex);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closest = el;
-          }
+    let activeEl = null;
+    let foundWordIdx = -1;
+
+    // 1. Buscar hacia adelante a partir de la última palabra activa conocida (evita saltar a líneas anteriores)
+    const startIndex = Math.min(lastActiveWordIndexRef.current, allWords.length - 1);
+    for (let i = startIndex; i < allWords.length; i++) {
+      const el = allWords[i];
+      const cIdx = parseInt(el.dataset.charIndex, 10);
+      const len = el.textContent.length;
+      if (activeCharIndex >= cIdx && activeCharIndex < cIdx + len) {
+        activeEl = el;
+        foundWordIdx = i;
+        break;
+      }
+      if (cIdx === activeCharIndex) {
+        activeEl = el;
+        foundWordIdx = i;
+        break;
+      }
+    }
+
+    // 2. Si no se encontró por rango exacto hacia adelante, buscar por proximidad hacia adelante (< 50 chars)
+    if (!activeEl) {
+      let closestIdx = -1;
+      let minDiff = Infinity;
+      for (let i = startIndex; i < allWords.length; i++) {
+        const el = allWords[i];
+        const cIdx = parseInt(el.dataset.charIndex, 10);
+        const diff = Math.abs(cIdx - activeCharIndex);
+        if (diff < minDiff && diff < 50) {
+          minDiff = diff;
+          closestIdx = i;
         }
-        if (minDiff < 40) {
-          activeEl = closest;
+      }
+      if (closestIdx !== -1) {
+        activeEl = allWords[closestIdx];
+        foundWordIdx = closestIdx;
+      }
+    }
+
+    // 3. Fallback: si el usuario hizo clic en una palabra anterior, buscar en todo el documento
+    if (!activeEl) {
+      for (let i = 0; i < allWords.length; i++) {
+        const el = allWords[i];
+        const cIdx = parseInt(el.dataset.charIndex, 10);
+        const len = el.textContent.length;
+        if (activeCharIndex >= cIdx && activeCharIndex < cIdx + len) {
+          activeEl = el;
+          foundWordIdx = i;
+          break;
         }
       }
     }
 
     if (activeEl) {
+      if (foundWordIdx !== -1) {
+        lastActiveWordIndexRef.current = foundWordIdx;
+      }
       activeEl.classList.remove('opacity-90');
       activeEl.classList.add('tts-word-active', 'bg-primary-500', 'text-white', 'shadow-md', 'scale-105', 'font-semibold');
-      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [activeCharIndex, actualContainerRef]);
 
@@ -168,7 +203,8 @@ export default function InteractiveMarkdown({
         // Buscar coincidencia exacta en el markdown original avanzando secuencialmente
         let wordCharIndex = markdown.indexOf(word, renderOffsetRef.current);
         if (wordCharIndex === -1) {
-          wordCharIndex = markdown.indexOf(word);
+          // No saltar hacia atrás al inicio del texto; mantener el offset actual
+          wordCharIndex = renderOffsetRef.current;
         } else {
           renderOffsetRef.current = wordCharIndex + word.length;
         }

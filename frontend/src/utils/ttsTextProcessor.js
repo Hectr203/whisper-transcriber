@@ -125,13 +125,11 @@ export function prepareTTSContent(fullText = '', startOffset = 0, isMarkdown = f
     const speechEnd = match.index + word.length;
 
     let foundIdx = fullText.indexOf(word, currentSearchIdx);
-    if (foundIdx === -1) {
-      foundIdx = fullText.indexOf(word, startOffset);
-    }
-
     if (foundIdx !== -1) {
       currentSearchIdx = foundIdx + word.length;
     } else {
+      // Si la palabra no se encuentra adelante, NO saltar hacia atrás al inicio del texto.
+      // Mantener la posición de avance actual para garantizar orden estrictamente monótono hacia adelante.
       foundIdx = currentSearchIdx;
     }
 

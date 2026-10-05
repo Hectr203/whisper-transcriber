@@ -108,3 +108,34 @@ test('buildSpeechTimeline calcula línea de tiempo fluida y avanza palabra por p
   assert.equal(w1.word, 'SKILL');
 });
 
+test('prepareTTSContent garantiza avance estrictamente monótono en textos largos con palabras repetidas', () => {
+  const sampleText = `
+# Prueba de Documento Largo con Palabras Repetidas
+
+El sistema de audio tiene el transcriptor.
+El audio es bueno y el sistema es rápido.
+En la línea 5 el sistema procesa el audio.
+En la línea 6 el sistema vuelve a procesar el audio.
+En la línea 7 el sistema repite el audio.
+En la línea 8 el sistema finaliza el audio.
+En la línea 9 el sistema tiene más audio.
+En la línea 10 el sistema reporta el audio.
+En la línea 11 el sistema valida el audio.
+En la línea 12 el sistema sincroniza el audio.
+En la línea 13 el sistema optimiza el audio.
+En la línea 14 el sistema comprueba el audio.
+En la línea 15 el sistema culmina el audio.
+`;
+
+  const { words } = prepareTTSContent(sampleText, 0, true);
+  assert.ok(words.length > 20);
+
+  // Verificar que jamás existe una palabra cuya posición de carácter retroceda
+  for (let i = 1; i < words.length; i++) {
+    assert.ok(
+      words[i].globalCharIndex >= words[i - 1].globalCharIndex,
+      `Salto hacia atrás detectado en palabra "${words[i].word}" (idx ${words[i].globalCharIndex} < previo ${words[i - 1].globalCharIndex})`
+    );
+  }
+});
+
