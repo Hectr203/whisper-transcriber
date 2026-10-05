@@ -313,28 +313,35 @@ export default function TextEditorTTS({
     if (nativeVoices && nativeVoices.length > 0) {
       if (selectedVoiceURI) {
         const selected = nativeVoices.find(v => v.voiceURI === selectedVoiceURI);
-        if (selected) utterance.voice = selected;
+        if (selected) {
+          utterance.voice = selected;
+          if (selected.lang) utterance.lang = selected.lang;
+        }
       } else {
         const esVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es') && v.localService);
-        if (esVoice) utterance.voice = esVoice;
-        else {
+        if (esVoice) {
+          utterance.voice = esVoice;
+          if (esVoice.lang) utterance.lang = esVoice.lang;
+        } else {
           const anyEsVoice = nativeVoices.find(v => v.lang && typeof v.lang === 'string' && v.lang.startsWith('es'));
-          if (anyEsVoice) utterance.voice = anyEsVoice;
+          if (anyEsVoice) {
+            utterance.voice = anyEsVoice;
+            if (anyEsVoice.lang) utterance.lang = anyEsVoice.lang;
+          }
         }
       }
     }
 
     let hasNativeBoundaries = false;
-    let lastBoundaryTimestamp = 0;
     let speechStartTime = Date.now();
     let totalPauseTime = 0;
     let pauseTimestamp = null;
+    let lastKeepAliveTimestamp = Date.now();
 
     const { getWordAtTime } = buildSpeechTimeline(mappedWords, sliceBuffer, adaptedRate);
 
     utterance.onboundary = (e) => {
       hasNativeBoundaries = true;
-      lastBoundaryTimestamp = Date.now();
       if (e && typeof e.charIndex === 'number') {
         const globalIdx = getGlobalCharIndex(e.charIndex);
         setActiveCharIndex(globalIdx);
@@ -346,13 +353,14 @@ export default function TextEditorTTS({
       speechStartTime = Date.now();
       totalPauseTime = 0;
       pauseTimestamp = null;
+      lastKeepAliveTimestamp = Date.now();
 
       if (speechIntervalRef.current) {
         clearInterval(speechIntervalRef.current);
         speechIntervalRef.current = null;
       }
 
-      // Tracker continuo: si la voz no emite onboundary (como Microsoft Elena Online),
+      // Tracker continuo: si la voz no emite onboundary (como Microsoft Elena Online en Edge/Chrome),
       // este intervalo avanza el sombreado de forma fluida y continua palabra por palabra.
       speechIntervalRef.current = setInterval(() => {
         if (utteranceRef.current !== utterance) {
@@ -371,14 +379,25 @@ export default function TextEditorTTS({
           pauseTimestamp = null;
         }
 
-        // Si los eventos onboundary nativos están respondiendo activamente (hace menos de 1000ms),
-        // no interferir para mantener sincronización nativa exacta.
-        if (hasNativeBoundaries && (Date.now() - lastBoundaryTimestamp < 1000)) {
+        const now = Date.now();
+
+        // Workaround para bug de 14 segundos en Chromium (Edge/Chrome):
+        // reactivar periódicamente para evitar pausas silenciosas del navegador
+        if (now - lastKeepAliveTimestamp > 10000) {
+          lastKeepAliveTimestamp = now;
+          if (window.speechSynthesis && window.speechSynthesis.speaking && !isPausedRef.current) {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+          }
+        }
+
+        // Si la voz nativa ya está emitiendo onboundary de manera continua, no interferir
+        if (hasNativeBoundaries) {
           return;
         }
 
         // Para voces online o cuando no hay onboundary, avanzar según el tiempo transcurrido
-        const elapsed = Math.max(0, Date.now() - speechStartTime - totalPauseTime);
+        const elapsed = Math.max(0, now - speechStartTime - totalPauseTime);
         const currentWord = getWordAtTime(elapsed);
         if (currentWord) {
           setActiveCharIndex(currentWord.globalCharIndex);

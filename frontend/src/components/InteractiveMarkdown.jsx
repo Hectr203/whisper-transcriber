@@ -91,6 +91,13 @@ export default function InteractiveMarkdown({
     return () => document.removeEventListener('mousedown', handleDocumentClick);
   }, []);
 
+  const renderOffsetRef = useRef(0);
+  const renderKeyCounterRef = useRef(0);
+
+  // Reiniciar el cursor de búsqueda y el contador de tokens al iniciar cada renderizado
+  renderOffsetRef.current = 0;
+  renderKeyCounterRef.current = 0;
+
   // Resaltado de palabra activa y auto-scroll sin reconstruir el DOM de ReactMarkdown
   useEffect(() => {
     if (!actualContainerRef.current) return;
@@ -107,12 +114,30 @@ export default function InteractiveMarkdown({
 
     // Buscar el elemento que coincida con activeCharIndex o contenga el índice
     let activeEl = container.querySelector(`[data-char-index="${activeCharIndex}"]`);
-    if (!activeEl) {
-      const allWords = Array.from(container.querySelectorAll('.tts-word'));
+    const allWords = Array.from(container.querySelectorAll('.tts-word'));
+    if (!activeEl && allWords.length > 0) {
       activeEl = allWords.find(el => {
         const cIdx = parseInt(el.dataset.charIndex, 10);
         return activeCharIndex >= cIdx && activeCharIndex < cIdx + el.textContent.length;
       });
+
+      // Si no hay coincidencia exacta de rango (ej. saltos de formato markdown o puntuación),
+      // asociar a la palabra más cercana en un umbral seguro para evitar parpadeos
+      if (!activeEl) {
+        let closest = null;
+        let minDiff = Infinity;
+        for (const el of allWords) {
+          const cIdx = parseInt(el.dataset.charIndex, 10);
+          const diff = Math.abs(cIdx - activeCharIndex);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = el;
+          }
+        }
+        if (minDiff < 40) {
+          activeEl = closest;
+        }
+      }
     }
 
     if (activeEl) {
@@ -124,8 +149,6 @@ export default function InteractiveMarkdown({
 
   // Construcción de componentes personalizados para ReactMarkdown (estable, sin re-crear en cada palabra)
   const customComponents = useMemo(() => {
-    let searchOffset = 0;
-
     const wrapText = (textStr) => {
       if (typeof textStr !== 'string') return textStr;
 
@@ -143,16 +166,19 @@ export default function InteractiveMarkdown({
         }
 
         // Buscar coincidencia exacta en el markdown original avanzando secuencialmente
-        let wordCharIndex = markdown.indexOf(word, searchOffset);
+        let wordCharIndex = markdown.indexOf(word, renderOffsetRef.current);
         if (wordCharIndex === -1) {
           wordCharIndex = markdown.indexOf(word);
         } else {
-          searchOffset = wordCharIndex + word.length;
+          renderOffsetRef.current = wordCharIndex + word.length;
         }
+
+        renderKeyCounterRef.current += 1;
+        const stableKey = `w_${renderKeyCounterRef.current}_${wordCharIndex}`;
 
         elements.push(
           <span
-            key={`mw_${wordCharIndex}_${matchStart}_${Math.random().toString(36).substring(2, 6)}`}
+            key={stableKey}
             data-char-index={wordCharIndex}
             onClick={(e) => {
               e.stopPropagation();
@@ -180,10 +206,16 @@ export default function InteractiveMarkdown({
         if (typeof child === 'string') {
           return wrapText(child);
         }
-        if (React.isValidElement(child) && child.props && child.props.children) {
-          return React.cloneElement(child, {
-            children: processChildren(child.props.children),
-          });
+        if (React.isValidElement(child)) {
+          // Si el elemento ya es un span interactivo de tts-word, no volver a envolver
+          if (child.props?.['data-char-index'] !== undefined || child.props?.className?.includes('tts-word')) {
+            return child;
+          }
+          if (child.props && child.props.children) {
+            return React.cloneElement(child, {
+              children: processChildren(child.props.children),
+            });
+          }
         }
         return child;
       });
@@ -233,7 +265,7 @@ export default function InteractiveMarkdown({
       ),
       pre: ({ children, ...props }) => (
         <pre {...props} className="bg-slate-900 text-slate-100 p-4 rounded-xl overflow-x-auto my-3 font-mono text-sm leading-relaxed">
-          {processChildren(children)}
+          {children}
         </pre>
       ),
       code: ({ node, inline, className, children, ...props }) => {
