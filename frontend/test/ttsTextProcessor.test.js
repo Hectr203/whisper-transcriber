@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareTTSContent } from '../src/utils/ttsTextProcessor.js';
+import { prepareTTSContent, buildSpeechTimeline } from '../src/utils/ttsTextProcessor.js';
 
 test('prepareTTSContent con texto plano genera texto y mapeo 1 a 1', () => {
   const text = 'Hola mundo, esta es una prueba de voz.';
@@ -89,3 +89,22 @@ test('prepareTTSContent soporta inicio desde un offset específico', () => {
   assert.ok(speechText.startsWith('Segunda'));
   assert.equal(getGlobalCharIndex(0), offset);
 });
+
+test('buildSpeechTimeline calcula línea de tiempo fluida y avanza palabra por palabra', () => {
+  const text = 'Viewed SKILL.md. Created tests.';
+  const { speechText, words } = prepareTTSContent(text, 0, false);
+  const { timeline, getWordAtTime } = buildSpeechTimeline(words, speechText, 1);
+
+  assert.equal(timeline.length, words.length);
+  assert.equal(timeline[0].word, 'Viewed');
+  
+  // Al tiempo 0 debe retornar Viewed
+  const w0 = getWordAtTime(0);
+  assert.equal(w0.word, 'Viewed');
+
+  // Al avanzar en el tiempo debe retornar las siguientes palabras
+  const midTime = timeline[1].startTimeMs + 10;
+  const w1 = getWordAtTime(midTime);
+  assert.equal(w1.word, 'SKILL');
+});
+

@@ -2,18 +2,26 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles, User, Settings2, Trash2 } from 'lucide-react';
 import { generateHash, getTTSAudio, saveTTSAudio } from '../utils/historyStorage';
 import { detectMarkdownContent } from '../utils/markdownDetector';
-import { prepareTTSContent } from '../utils/ttsTextProcessor';
+import { prepareTTSContent, buildSpeechTimeline } from '../utils/ttsTextProcessor';
 import InteractiveMarkdown from './InteractiveMarkdown';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const WordToken = React.memo(({ token, isActive, onClick }) => {
+  const spanRef = useRef(null);
+  useEffect(() => {
+    if (isActive && spanRef.current) {
+      spanRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isActive]);
+
   return (
     <span
+      ref={spanRef}
       onClick={() => onClick(token.charIndex)}
       className={`cursor-pointer px-1 py-0.5 rounded transition-all duration-100 ${
         isActive 
-          ? 'bg-primary-500 text-white shadow-md scale-105 inline-block opacity-100' 
+          ? 'bg-primary-500 text-white shadow-md scale-105 inline-block opacity-100 font-semibold' 
           : 'hover:bg-primary-50 dark:hover:bg-primary-900/30 opacity-80 hover:opacity-100'
       }`}
       title="Clic para reproducir desde aquí"
@@ -48,6 +56,7 @@ export default function TextEditorTTS({
   const utteranceRef = useRef(null);
   const audioRef = useRef(null);
   const markdownRef = useRef(null);
+  const speechIntervalRef = useRef(null);
 
   const [elevenLabsKey, setElevenLabsKey] = useState('');
   const [useAITTS, setUseAITTS] = useState(() => localStorage.getItem('useAITTS') === 'true');
@@ -113,6 +122,10 @@ export default function TextEditorTTS({
       setIsMarkdownMode(true);
     }
     return () => {
+      if (speechIntervalRef.current) {
+        clearInterval(speechIntervalRef.current);
+        speechIntervalRef.current = null;
+      }
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       if (audioRef.current) {
         audioRef.current.pause();
@@ -141,11 +154,11 @@ export default function TextEditorTTS({
     let result = [];
     let lastIndex = 0;
     
-    tokens.forEach(t => {
+    tokens.forEach((t, tokenIdx) => {
        if (t.charIndex > lastIndex) {
           result.push({ type: 'text', val: text.substring(lastIndex, t.charIndex), key: `t_${lastIndex}` });
        }
-       result.push({ type: 'word', token: t, key: `w_${t.charIndex}` });
+       result.push({ type: 'word', token: t, tokenIndex: tokenIdx, key: `w_${t.charIndex}` });
        lastIndex = t.charIndex + t.length;
     });
     if (lastIndex < text.length) {
@@ -188,7 +201,7 @@ export default function TextEditorTTS({
       return;
     }
 
-    const { speechText, getGlobalCharIndex } = prepareTTSContent(text, offsetIndex, isMarkdownMode);
+    const { speechText, getGlobalCharIndex, words: mappedWords } = prepareTTSContent(text, offsetIndex, isMarkdownMode);
     const sliceBuffer = speechText || rawSlice;
 
     if (useAITTS) {
@@ -312,18 +325,16 @@ export default function TextEditorTTS({
     }
 
     let hasNativeBoundaries = false;
-    let fallbackTimeout = null;
+    let lastBoundaryTimestamp = 0;
+    let speechStartTime = Date.now();
+    let totalPauseTime = 0;
+    let pauseTimestamp = null;
+
+    const { getWordAtTime } = buildSpeechTimeline(mappedWords, sliceBuffer, adaptedRate);
 
     utterance.onboundary = (e) => {
       hasNativeBoundaries = true;
-      if (simulationInterval) {
-        clearInterval(simulationInterval);
-        simulationInterval = null;
-      }
-      if (fallbackTimeout) {
-        clearTimeout(fallbackTimeout);
-        fallbackTimeout = null;
-      }
+      lastBoundaryTimestamp = Date.now();
       if (e && typeof e.charIndex === 'number') {
         const globalIdx = getGlobalCharIndex(e.charIndex);
         setActiveCharIndex(globalIdx);
@@ -332,41 +343,54 @@ export default function TextEditorTTS({
 
     utterance.onstart = () => {
       setPlayState('playing');
-      if (!isEdge) {
-        // Fallback de seguridad: SOLO se activa si después de 600ms NO hubo ningún evento nativo onboundary
-        fallbackTimeout = setTimeout(() => {
-          if (hasNativeBoundaries) return;
-          if (utteranceRef.current !== utterance) return;
-          
-          const charsPerSec = 14 * adaptedRate;
-          let elapsedMs = 600;
-          let lastTick = Date.now();
-          
-          simulationInterval = setInterval(() => {
-            const now = Date.now();
-            const delta = now - lastTick;
-            lastTick = now;
-            
-            if (hasNativeBoundaries || utteranceRef.current !== utterance) {
-              clearInterval(simulationInterval);
-              simulationInterval = null;
-              return;
-            }
-            if (isPausedRef.current || window.speechSynthesis.paused) return; 
-            
-            elapsedMs += delta;
-            const estimatedChar = Math.floor((elapsedMs / 1000) * charsPerSec);
-            if (estimatedChar < sliceBuffer.length) {
-              setActiveCharIndex(getGlobalCharIndex(estimatedChar));
-            }
-          }, 100);
-        }, 600);
+      speechStartTime = Date.now();
+      totalPauseTime = 0;
+      pauseTimestamp = null;
+
+      if (speechIntervalRef.current) {
+        clearInterval(speechIntervalRef.current);
+        speechIntervalRef.current = null;
       }
+
+      // Tracker continuo: si la voz no emite onboundary (como Microsoft Elena Online),
+      // este intervalo avanza el sombreado de forma fluida y continua palabra por palabra.
+      speechIntervalRef.current = setInterval(() => {
+        if (utteranceRef.current !== utterance) {
+          if (speechIntervalRef.current) {
+            clearInterval(speechIntervalRef.current);
+            speechIntervalRef.current = null;
+          }
+          return;
+        }
+
+        if (isPausedRef.current || (window.speechSynthesis && window.speechSynthesis.paused)) {
+          if (!pauseTimestamp) pauseTimestamp = Date.now();
+          return;
+        } else if (pauseTimestamp) {
+          totalPauseTime += (Date.now() - pauseTimestamp);
+          pauseTimestamp = null;
+        }
+
+        // Si los eventos onboundary nativos están respondiendo activamente (hace menos de 1000ms),
+        // no interferir para mantener sincronización nativa exacta.
+        if (hasNativeBoundaries && (Date.now() - lastBoundaryTimestamp < 1000)) {
+          return;
+        }
+
+        // Para voces online o cuando no hay onboundary, avanzar según el tiempo transcurrido
+        const elapsed = Math.max(0, Date.now() - speechStartTime - totalPauseTime);
+        const currentWord = getWordAtTime(elapsed);
+        if (currentWord) {
+          setActiveCharIndex(currentWord.globalCharIndex);
+        }
+      }, 50);
     };
 
     utterance.onend = (e) => {
-      if (fallbackTimeout) clearTimeout(fallbackTimeout);
-      if (simulationInterval) clearInterval(simulationInterval);
+      if (speechIntervalRef.current) {
+        clearInterval(speechIntervalRef.current);
+        speechIntervalRef.current = null;
+      }
       if (utteranceRef.current !== utterance) return;
       utteranceRef.current = null;
       setPlayState('idle');
@@ -374,8 +398,10 @@ export default function TextEditorTTS({
     };
 
     utterance.onerror = (e) => {
-      if (fallbackTimeout) clearTimeout(fallbackTimeout);
-      if (simulationInterval) clearInterval(simulationInterval);
+      if (speechIntervalRef.current) {
+        clearInterval(speechIntervalRef.current);
+        speechIntervalRef.current = null;
+      }
       if (e.error !== 'interrupted' && e.error !== 'canceled') {
         console.error("Error en SpeechSynthesis:", e);
       }
@@ -432,6 +458,10 @@ export default function TextEditorTTS({
   };
 
   const handleStop = () => {
+    if (speechIntervalRef.current) {
+      clearInterval(speechIntervalRef.current);
+      speechIntervalRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -624,7 +654,7 @@ export default function TextEditorTTS({
               <div className="absolute inset-0 p-4 overflow-y-auto text-slate-800 dark:text-slate-200 text-lg leading-loose font-sans bg-transparent whitespace-pre-wrap">
                 {parsedElements.map((el) => {
                    if (el.type === 'text') return <span key={el.key} className="opacity-70">{el.val}</span>;
-                   const isActive = activeCharIndex >= el.token.charIndex && activeCharIndex < (el.token.charIndex + el.token.length);
+                   const isActive = activeTokenIndex === el.tokenIndex;
                    return <WordToken key={el.key} token={el.token} isActive={isActive} onClick={jumpToOffset} />;
                 })}
               </div>

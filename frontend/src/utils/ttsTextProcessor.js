@@ -154,3 +154,60 @@ export function prepareTTSContent(fullText = '', startOffset = 0, isMarkdown = f
 
   return { speechText: speechText || rawSlice, getGlobalCharIndex, words: mappedWords };
 }
+
+/**
+ * Construye una línea de tiempo estimada de palabras y pausas de locución.
+ * Permite que cualquier voz remota (como Microsoft Elena Online en Edge/Chrome)
+ * o voz que no emita eventos onboundary avance de forma continua y suave.
+ * @param {Array} words - Lista de palabras mapeadas { word, speechStart, speechEnd, globalCharIndex }
+ * @param {string} speechText - Texto limpio enviado al sintetizador
+ * @param {number} speechRate - Velocidad de reproducción (1x, 1.5x, etc.)
+ * @returns {{ timeline: Array, totalDurationMs: number, getWordAtTime: (elapsedMs: number) => Object }}
+ */
+export function buildSpeechTimeline(words = [], speechText = '', speechRate = 1) {
+  const effectiveRate = Math.max(0.5, Math.min(3, speechRate || 1));
+  const baseCharsPerSec = 14.0 * effectiveRate;
+  let accumulatedMs = 0;
+
+  const timeline = words.map((w, idx) => {
+    const startTimeMs = accumulatedMs;
+    const charCount = w.word.length;
+    // Duración de la palabra: mínimo 160ms para palabras muy cortas
+    let wordDurationMs = Math.max(160 / effectiveRate, (charCount / baseCharsPerSec) * 1000);
+
+    // Detección de pausas por signos de puntuación posteriores a la palabra
+    const afterWord = speechText.substring(w.speechEnd, w.speechEnd + 6);
+    if (/^[,\;:]/.test(afterWord)) {
+      wordDurationMs += (200 / effectiveRate);
+    } else if (/^[\.\?\!]/.test(afterWord)) {
+      wordDurationMs += (380 / effectiveRate);
+    } else if (/^\s*\n/.test(afterWord)) {
+      wordDurationMs += (300 / effectiveRate);
+    }
+
+    accumulatedMs += wordDurationMs;
+
+    return {
+      ...w,
+      wordIndex: idx,
+      startTimeMs,
+      endTimeMs: accumulatedMs,
+      durationMs: wordDurationMs
+    };
+  });
+
+  const getWordAtTime = (elapsedMs) => {
+    if (timeline.length === 0) return null;
+    if (elapsedMs <= 0) return timeline[0];
+    const found = timeline.find(item => elapsedMs >= item.startTimeMs && elapsedMs < item.endTimeMs);
+    if (found) return found;
+    if (elapsedMs >= timeline[timeline.length - 1].endTimeMs) {
+      return timeline[timeline.length - 1];
+    }
+    const next = timeline.find(item => item.startTimeMs > elapsedMs);
+    return next || timeline[timeline.length - 1];
+  };
+
+  return { timeline, totalDurationMs: accumulatedMs, getWordAtTime };
+}
+
