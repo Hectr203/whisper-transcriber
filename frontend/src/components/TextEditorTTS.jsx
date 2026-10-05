@@ -521,6 +521,9 @@ export default function TextEditorTTS({
       if (res.ok) {
         const data = await res.json();
         setText(data.result);
+        if (detectMarkdownContent(data.result)) {
+          setIsMarkdownMode(true);
+        }
       } else {
         const errData = await res.json().catch(() => ({}));
         if (errData.message && errData.message.includes('MISSING_API_KEY')) {
@@ -622,6 +625,12 @@ export default function TextEditorTTS({
                 onPaste={(e) => {
                   const pasted = e.clipboardData?.getData('text') || '';
                   if (detectMarkdownContent(pasted)) {
+                    e.preventDefault();
+                    const target = e.target;
+                    const start = target.selectionStart ?? text.length;
+                    const end = target.selectionEnd ?? text.length;
+                    const newText = text.substring(0, start) + pasted + text.substring(end);
+                    setText(newText);
                     setIsMarkdownMode(true);
                   }
                 }}
