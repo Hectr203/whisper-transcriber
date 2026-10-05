@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CheckCircle, Play, Pause, Square, Download, Copy, Check, FileText, RotateCcw, Loader, Settings, Sparkles, User, Settings2, Trash2 } from 'lucide-react';
 import { generateHash, getTTSAudio, saveTTSAudio } from '../utils/historyStorage';
-
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { detectMarkdownContent } from '../utils/markdownDetector';
+import InteractiveMarkdown from './InteractiveMarkdown';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -109,6 +108,9 @@ export default function TextEditorTTS({
 
   useEffect(() => {
     setText(initialText);
+    if (initialText && detectMarkdownContent(initialText)) {
+      setIsMarkdownMode(true);
+    }
     return () => {
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       if (audioRef.current) {
@@ -163,51 +165,7 @@ export default function TextEditorTTS({
     return idx;
   }, [activeCharIndex, tokens]);
 
-  // Efecto para resaltar la palabra en modo Markdown usando CSS Custom Highlight API
-  useEffect(() => {
-    if (!window.CSS || !CSS.highlights) return; // Fallback si no está soportado (Chrome 105+, Safari 17.2+, Firefox 126+)
-    
-    if (!isMarkdownMode || activeTokenIndex === -1 || !markdownRef.current) {
-      CSS.highlights.delete('tts-highlight');
-      return;
-    }
-
-    const container = markdownRef.current;
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-    let currentWordIndex = 0;
-    let node;
-    const regex = /([\wáéíóúüñÁÉÍÓÚÜÑ]+)/g;
-    let found = false;
-    
-    while ((node = walker.nextNode())) {
-      let match;
-      while ((match = regex.exec(node.nodeValue)) !== null) {
-        if (currentWordIndex === activeTokenIndex) {
-          const range = new Range();
-          range.setStart(node, match.index);
-          range.setEnd(node, match.index + match[0].length);
-          const highlight = new Highlight(range);
-          CSS.highlights.set('tts-highlight', highlight);
-          found = true;
-          break;
-        }
-        currentWordIndex++;
-      }
-      if (found) break;
-    }
-    
-    if (!found) {
-      CSS.highlights.delete('tts-highlight');
-    }
-    
-    // Si la lectura va avanzando, intentamos hacer scroll hacia la palabra resaltada
-    if (found && container) {
-      // Como CSS.highlights no nos da el elemento fácilmente, podemos aproximar el scroll usando el contenedor
-      // Esto es complejo sin mutar el DOM, pero al menos el usuario verá el highlight en la ventana.
-    }
-    
-  }, [activeTokenIndex, isMarkdownMode]);
-
+  // Salto a offset de lectura
   const jumpToOffset = (offset) => {
     playFrom(offset);
   };
@@ -233,8 +191,12 @@ export default function TextEditorTTS({
     if (isMarkdownMode) {
       // Si estamos en modo markdown, limpiamos el texto para que la lectura sea natural
       sliceBuffer = sliceBuffer
-        .replace(/[#*`_~]/g, '')
+        .replace(/^#{1,6}\s+/gm, '')
         .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+        .replace(/[*_~`]/g, '')
+        .replace(/^\s*[-*+]\s+/gm, '')
+        .replace(/^\s*\d+\.\s+/gm, '')
+        .replace(/^>\s+/gm, '')
         .trim();
       if (!sliceBuffer) sliceBuffer = rawSlice; // fallback
     }
@@ -636,11 +598,14 @@ export default function TextEditorTTS({
           
           <div className="flex-1 min-h-0 relative">
             {isMarkdownMode ? (
-              <div 
-                ref={markdownRef}
-                className="absolute inset-0 p-4 w-full h-full overflow-y-auto text-slate-800 dark:text-slate-200 prose prose-sm sm:prose-base prose-slate dark:prose-invert max-w-none bg-transparent"
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+              <div className="absolute inset-0 w-full h-full">
+                <InteractiveMarkdown
+                  markdown={text}
+                  activeCharIndex={activeCharIndex}
+                  onWordClick={jumpToOffset}
+                  onSelectionPlay={jumpToOffset}
+                  containerRef={markdownRef}
+                />
               </div>
             ) : playState !== 'idle' ? (
               <div className="absolute inset-0 p-4 overflow-y-auto text-slate-800 dark:text-slate-200 text-lg leading-loose font-sans bg-transparent whitespace-pre-wrap">
@@ -652,7 +617,14 @@ export default function TextEditorTTS({
               </div>
             ) : (
               <textarea
-                value={text} onChange={(e) => setText(e.target.value)}
+                value={text} 
+                onChange={(e) => setText(e.target.value)}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData?.getData('text') || '';
+                  if (detectMarkdownContent(pasted)) {
+                    setIsMarkdownMode(true);
+                  }
+                }}
                 placeholder="Escribe o pega el texto que deseas convertir en voz aquí..."
                 className="absolute inset-0 p-4 w-full h-full bg-transparent text-slate-800 dark:text-slate-200 text-base leading-loose resize-none overflow-y-auto focus:outline-none placeholder-slate-400"
               />
