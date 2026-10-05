@@ -300,10 +300,10 @@ export default function YouTubePanel({ onRefreshHistory }) {
              <Film size={36} strokeWidth={2} />
           </div>
           <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 dark:text-white mb-5 tracking-tight">
-            Analiza y Descarga de YouTube
+            Analiza y Descarga Enlaces
           </h1>
           <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
-            Ingresa un enlace de un video o playlist para extraer su contenido de forma rápida. Opcionalmente, puedes enviar el audio directamente a Whisper para transcribirlo con IA.
+            Ingresa un enlace de video o audio (YouTube, TikTok, Facebook, Suno, etc.) para extraer su contenido. Opcionalmente, transcríbelo con IA.
           </p>
         </div>
       )}
@@ -321,7 +321,7 @@ export default function YouTubePanel({ onRefreshHistory }) {
               onChange={(e) => setUrl(e.target.value)}
               disabled={isAnalyzing}
               className="block w-full pl-14 pr-36 py-5 bg-transparent text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none text-lg rounded-2xl"
-              placeholder="https://youtube.com/watch?v=..."
+              placeholder="https://youtube.com/... o https://tiktok.com/..."
             />
             <div className="absolute inset-y-2 right-2">
               <button
@@ -462,7 +462,7 @@ export default function YouTubePanel({ onRefreshHistory }) {
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
             <div>
               <div className="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold mb-2">
-                <List size={20} /> <span>Playlist de YouTube</span>
+                <List size={20} /> <span>Lista de Reproducción</span>
               </div>
               <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2 leading-tight">
                 {resultData.title}

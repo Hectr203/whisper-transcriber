@@ -20,7 +20,7 @@ const ALLOWED_MIME_TYPES = [
   'video/x-matroska'
 ];
 
-const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv'];
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv', '.mpeg'];
 
 function validarArchivo(archivo) {
   if (!archivo) {

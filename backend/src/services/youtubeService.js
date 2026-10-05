@@ -3,41 +3,81 @@ const youtubedl = require('youtube-dl-exec');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const axios = require('axios');
 
 class YouTubeService {
   async analyzeUrl(url, forceType) {
     console.log(`\n[YouTubeService] Analizando URL: ${url} (forceType: ${forceType})`);
     
+    if (url.includes('tiktok.com')) {
+      console.log(`[YouTubeService] Detectado como TikTok.`);
+      return await this.analyzeTikTok(url);
+    }
+    
+    if (url.includes('suno.com')) {
+      console.log(`[YouTubeService] Detectado como Suno.`);
+      return await this.analyzeSuno(url);
+    }
+    
     // Si se forza cargar como playlist
-    if (forceType === 'playlist') {
-      if (!ytpl.validateID(url)) {
-        throw new Error('Esta lista de reproducción no se puede analizar porque es privada, personal (como "Ver más tarde") o es inaccesible.');
-      }
+    if (forceType === 'playlist' && ytpl.validateID(url)) {
       console.log(`[YouTubeService] Forzando análisis completo de PLAYLIST.`);
       return await this.analyzePlaylist(url);
     }
 
-    // Detectamos si la URL tiene un parámetro 'v=' (es decir, apunta a un video específico)
+    let isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
     let hasVideo = false;
     try {
       const urlParams = new URL(url).searchParams;
       hasVideo = urlParams.has('v');
     } catch (e) {
-      console.log(`[YouTubeService] La URL no tiene formato estándar (posiblemente youtu.be)`);
+      console.log(`[YouTubeService] La URL no tiene formato estándar.`);
     }
-    
     hasVideo = hasVideo || url.includes('youtu.be/');
 
-    if (hasVideo) {
-      console.log(`[YouTubeService] Detectado como VIDEO específico.`);
-      return await this.analyzeVideo(url);
-    } else if (ytpl.validateID(url)) {
+    if (isYouTube && ytpl.validateID(url) && !hasVideo) {
       console.log(`[YouTubeService] Detectado como PLAYLIST.`);
       return await this.analyzePlaylist(url);
     } else {
-      console.log(`[YouTubeService] URL inválida.`);
-      throw new Error('La URL proporcionada no es un enlace válido de YouTube.');
+      console.log(`[YouTubeService] Intentando analizar como video individual con yt-dlp...`);
+      return await this.analyzeVideo(url);
     }
+  }
+
+  async analyzeTikTok(url) {
+    try {
+      const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`);
+      const data = res.data.data;
+      if (!data) throw new Error('No se encontraron datos en TikTok (TikWM).');
+      return {
+        type: 'video',
+        platform: 'tiktok',
+        videoId: data.id,
+        title: data.title || 'TikTok Video',
+        author: data.author?.nickname || 'TikTok User',
+        thumbnail: data.cover,
+        durationSec: data.duration,
+        durationText: this.formatDuration(data.duration),
+        isPlaylistContent: false,
+        estimatedVideoMB: 'Desconocido',
+        estimatedAudioMB: 'Desconocido',
+        directPlayUrl: data.play,
+        directAudioUrl: data.music,
+        formats: {
+          video: [{ itag: 'direct', qualityLabel: 'Original (Sin Marca)', container: 'mp4' }],
+          video_only: [{ itag: 'direct', qualityLabel: 'Original (Sin Marca)', container: 'mp4' }],
+          audio: [{ itag: 'direct', audioBitrate: 128, container: 'mp3' }]
+        }
+      };
+    } catch (e) {
+      console.error('[YouTubeService] Error analizando TikTok:', e.message);
+      throw new Error('No se pudo analizar el video de TikTok. Verifica que la URL sea válida.');
+    }
+  }
+
+  async analyzeSuno(url) {
+    console.log(`[YouTubeService] Intento de análisis de Suno: ${url}`);
+    throw new Error('Suno ha actualizado sus sistemas con encriptación (DRM) bloqueando las descargas de terceros. Actualmente no es posible descargarlos.');
   }
 
   async analyzeVideo(url) {
@@ -123,11 +163,42 @@ class YouTubeService {
   }
 
   /**
-   * Transmite el audio o video directamente al cliente usando youtube-dl-exec (yt-dlp)
+   * Transmite el audio o video directamente al cliente usando youtube-dl-exec (yt-dlp) o descargas directas
    */
   async streamDownload(url, formatType, itag, res) {
-    console.log(`\n[YouTubeService] Solicitud de DESCARGA en STREAMING iniciada.`);
+    console.log(`\n[YouTubeService] Solicitud de DESCARGA en STREAMING iniciada para: ${url}`);
     console.log(`[YouTubeService] Formato: ${formatType}, Calidad itag: ${itag}`);
+
+    if (url.includes('tiktok.com') || url.includes('suno.com')) {
+       console.log(`[YouTubeService] Ejecutando descarga directa (TikTok/Suno)...`);
+       let directUrl = '';
+       let extension = formatType === 'audio' ? 'mp3' : 'mp4';
+       let title = 'media';
+       
+       if (url.includes('tiktok.com')) {
+          const tData = await this.analyzeTikTok(url);
+          directUrl = formatType === 'audio' ? tData.directAudioUrl : tData.directPlayUrl;
+          title = tData.title.substring(0,30).replace(/[^\w\s-]/gi, '');
+       } else {
+          const sData = await this.analyzeSuno(url);
+          directUrl = sData.directAudioUrl;
+          extension = 'm4a';
+          title = sData.title.substring(0,30).replace(/[^\w\s-]/gi, '');
+       }
+       
+       res.setHeader('Content-Disposition', `attachment; filename="${title}.${extension}"`);
+       res.setHeader('Content-Type', extension === 'mp4' ? 'video/mp4' : (extension === 'm4a' ? 'audio/mp4' : 'audio/mpeg'));
+       
+       try {
+         const response = await axios({ method: 'GET', url: directUrl, responseType: 'stream' });
+         response.data.pipe(res);
+       } catch (err) {
+         console.error('[YouTubeService] Error de streaming directo:', err.message);
+         if (!res.headersSent) res.status(500).send('Error durante la descarga directa.');
+       }
+       return;
+    }
+
     let title = 'video';
     try {
       const info = await youtubedl(url, { dumpJson: true, noPlaylist: true, noCheckCertificates: true, noWarnings: true });
@@ -234,6 +305,36 @@ class YouTubeService {
    */
   async downloadAudioToLocal(url, jobId) {
     console.log(`\n[YouTubeService] Preparando descarga local de audio para transcripción (Job: ${jobId})`);
+    
+    if (url.includes('tiktok.com') || url.includes('suno.com')) {
+       console.log(`[YouTubeService] Ejecutando descarga directa de audio (TikTok/Suno) a local...`);
+       let directUrl = '';
+       let extension = url.includes('tiktok.com') ? 'mp3' : 'm4a';
+       if (url.includes('tiktok.com')) {
+          const tData = await this.analyzeTikTok(url);
+          directUrl = tData.directAudioUrl;
+       } else {
+          const sData = await this.analyzeSuno(url);
+          directUrl = sData.directAudioUrl;
+       }
+       
+       const tempDir = path.join(os.tmpdir(), `whisper_transcriber_yt`);
+       if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+       const localFilePath = path.join(tempDir, `media_${jobId}.${extension}`);
+       
+       try {
+         const response = await axios({ method: 'GET', url: directUrl, responseType: 'stream' });
+         const writer = fs.createWriteStream(localFilePath);
+         response.data.pipe(writer);
+         return new Promise((resolve, reject) => {
+           writer.on('finish', () => resolve(localFilePath));
+           writer.on('error', reject);
+         });
+       } catch (err) {
+         throw new Error('Error al descargar el audio directamente: ' + err.message);
+       }
+    }
+
     const tempDir = path.join(os.tmpdir(), `whisper_transcriber_yt`);
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
     

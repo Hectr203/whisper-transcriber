@@ -3,7 +3,7 @@ import { CloudUpload, AlertTriangle } from 'lucide-react';
 
 const ALLOWED_TYPES = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'audio/x-m4a',
   'audio/ogg', 'audio/flac', 'audio/webm', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
-const ALLOWED_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv'];
+const ALLOWED_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.mp4', '.webm', '.aac', '.mov', '.avi', '.mkv', '.mpeg'];
 const MAX_SIZE_GB = 1;
 
 export default function UploadZone({ onFileSelected, disabled, acceptedFormatType = 'all' }) {
